@@ -1,0 +1,7 @@
+1764115303736 | USER: kk           | FILE: task5.py                       | STATUS: START    | SIZE: 537 bytes
+1764115303756 | USER: kk           | FILE: task5.py                       | STATUS: SUCCESS  | SIZE: 537 bytes
+1764115401830 | USER: ERROR        | FILE: N/A                            | STATUS: null     | SIZE: 0 bytes
+1764115595241 | USER: KK           | FILE: tes.txt                        | STATUS: START    | SIZE: 3 bytes
+1764115595244 | USER: KK           | FILE: tes.txt                        | STATUS: SUCCESS  | SIZE: 3 bytes
+1764115595377 | USER: dhinda       | FILE: tes (1).txt                    | STATUS: START    | SIZE: 3 bytes
+1764115595379 | USER: dhinda       | FILE: tes (1).txt                    | STATUS: SUCCESS  | SIZE: 3 bytes
