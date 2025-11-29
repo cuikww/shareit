@@ -31,6 +31,7 @@ public class MainController implements ConnectionManager.ServerListener,
 
         // 4. Siapkan Transfer Manager
         this.transferManager = new TransferManager(this);
+        this.transferManager.setConnectionManager(this.connectionManager);
     }
 
     public void startApp() {
@@ -66,9 +67,22 @@ public class MainController implements ConnectionManager.ServerListener,
 
     @Override
     public void onClientConnected(Socket socket) {
-        // Ini akan kita isi di Phase 2 (Minggu depan)
-        // Nanti kita akan panggil TransferManager di sini
-        System.out.println("[Controller] Klien terhubung, siap untuk handshake...");
+        System.out.println("[Controller] Client connected from: " + socket.getInetAddress());
+        // Receiver side - akan handle di ReceiverTask (Phase 4)
+    }
+
+    @Override
+    public void onConnectionEstablished(Socket socket, String remoteIP) {
+        System.out.println("[Controller] Connection established to: " + remoteIP);
+        // Connection berhasil, socket siap digunakan untuk transfer
+    }
+
+    @Override
+    public void onConnectionFailed(String remoteIP, String error) {
+        System.err.println("[Controller] Connection failed to " + remoteIP + ": " + error);
+        SwingUtilities.invokeLater(() -> {
+            mainFrame.showError("Gagal terhubung ke " + remoteIP + "\n" + error);
+        });
     }
 
     // --- Callback dari DiscoveryService (DiscoveryListener) ---

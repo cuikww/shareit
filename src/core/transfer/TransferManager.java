@@ -1,9 +1,11 @@
 package core.transfer;
 
+import core.network.ConnectionManager;
 import core.network.Device;
 import core.utils.FileUtils;
 import java.io.File;
 import java.io.IOException;
+import java.net.Socket;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -13,6 +15,7 @@ public class TransferManager {
 
     private final ExecutorService executorService;
     private final Map<String, TransferTask> activeTasks = new ConcurrentHashMap<>();
+    private ConnectionManager connectionManager;
 
     public interface TransferListener {
         void onTransferStarted(String transferId, String fileName);
@@ -31,11 +34,16 @@ public class TransferManager {
         this.executorService = Executors.newCachedThreadPool();
     }
 
+    public void setConnectionManager(ConnectionManager connectionManager) {
+        this.connectionManager = connectionManager;
+    }
+
     /**
      * Kirim file/folder ke device target
      */
     public void sendFile(File inputPath, Device targetDevice) {
         executorService.submit(() -> {
+            Socket socket = null;
             try {
                 // 1. Prepare file (zip jika folder)
                 File fileToSend = FileUtils.prepareFile(inputPath);
@@ -55,8 +63,18 @@ public class TransferManager {
                 System.out.println("[TransferManager] Preparing to send: " + fileToSend.getName() +
                         " (" + FileUtils.formatFileSize(fileToSend.length()) + ") to " + targetDevice);
 
-                // 4. Create sender task (akan diimplementasi di phase berikutnya)
-                // SenderTask task = new SenderTask(fileToSend, targetDevice, listener);
+                // 4. Establish connection (Phase 2: Handshake)
+                if (connectionManager == null) {
+                    throw new IOException("ConnectionManager not set");
+                }
+
+                socket = connectionManager.connectTo(targetDevice.getIpAddress());
+
+                System.out.println("[TransferManager] Connection established, ready to transfer");
+                System.out.println("[TransferManager] Socket: " + socket.getInetAddress() + ":" + socket.getPort());
+
+                // 5. Create sender task (akan diimplementasi di phase berikutnya)
+                // SenderTask task = new SenderTask(fileToSend, socket, transferId, listener);
                 // activeTasks.put(transferId, task);
                 // task.start();
 
@@ -65,9 +83,18 @@ public class TransferManager {
                 System.out.println("[TransferManager] TODO: Implement SenderTask untuk actual transfer");
 
             } catch (IOException e) {
-                System.err.println("[TransferManager] Error preparing file: " + e.getMessage());
+                System.err.println("[TransferManager] Error: " + e.getMessage());
                 if (listener != null) {
                     listener.onTransferFailed("unknown", e.getMessage());
+                }
+            } finally {
+                // Cleanup socket jika error (nanti di SenderTask yang handle)
+                if (socket != null && !socket.isClosed()) {
+                    try {
+                        // socket.close(); // Jangan close dulu, nanti di SenderTask
+                    } catch (Exception e) {
+                        // Ignore
+                    }
                 }
             }
         });

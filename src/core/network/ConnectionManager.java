@@ -15,8 +15,14 @@ public class ConnectionManager implements Runnable {
     // Interface sederhana agar Controller tahu status server
     public interface ServerListener {
         void onServerStarted(String ip, int port);
+
         void onServerError(String error);
-        void onClientConnected(Socket socket); // Persiapan untuk Phase 2
+
+        void onClientConnected(Socket socket);
+
+        void onConnectionEstablished(Socket socket, String remoteIP);
+
+        void onConnectionFailed(String remoteIP, String error);
     }
 
     private final ServerListener listener;
@@ -26,7 +32,8 @@ public class ConnectionManager implements Runnable {
     }
 
     public void startServer() {
-        if (isRunning) return;
+        if (isRunning)
+            return;
         isRunning = true;
         serverThread = new Thread(this, "Server-Thread");
         serverThread.start();
@@ -43,11 +50,40 @@ public class ConnectionManager implements Runnable {
         }
     }
 
+    /**
+     * Connect ke device lain (sebagai client)
+     */
+    public Socket connectTo(String targetIP) throws IOException {
+        System.out.println("[ConnectionManager] Connecting to " + targetIP + ":" + Config.TCP_PORT);
+
+        try {
+            Socket socket = new Socket(targetIP, Config.TCP_PORT);
+            socket.setSoTimeout(30000); // 30 detik timeout
+
+            System.out.println("[ConnectionManager] Connected to " + targetIP);
+
+            if (listener != null) {
+                listener.onConnectionEstablished(socket, targetIP);
+            }
+
+            return socket;
+
+        } catch (IOException e) {
+            System.err.println("[ConnectionManager] Connection failed to " + targetIP + ": " + e.getMessage());
+
+            if (listener != null) {
+                listener.onConnectionFailed(targetIP, e.getMessage());
+            }
+
+            throw e;
+        }
+    }
+
     @Override
     public void run() {
         try {
             serverSocket = new ServerSocket(Config.TCP_PORT);
-            
+
             // Dapatkan IP lokal komputer ini untuk ditampilkan
             InetAddress localHost = InetAddress.getLocalHost();
             String ip = localHost.getHostAddress();
@@ -62,7 +98,7 @@ public class ConnectionManager implements Runnable {
             while (isRunning) {
                 // Menunggu koneksi masuk (Blocking)
                 Socket clientSocket = serverSocket.accept();
-                
+
                 // Ada klien masuk! Beri tahu Controller (Nanti di Phase 2 ini dipakai)
                 System.out.println("[Server] Koneksi baru dari: " + clientSocket.getInetAddress());
                 if (listener != null) {
@@ -72,7 +108,8 @@ public class ConnectionManager implements Runnable {
 
         } catch (IOException e) {
             if (isRunning) { // Jika error bukan karena distop manual
-                if (listener != null) listener.onServerError(e.getMessage());
+                if (listener != null)
+                    listener.onServerError(e.getMessage());
                 e.printStackTrace();
             }
         }

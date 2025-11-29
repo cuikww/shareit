@@ -1,5 +1,8 @@
 # Testing Phase 3: Folder Preparation
 
+**Note:** Phase ini sebenarnya sudah include Phase 2 (Connection Handshake).
+Lihat `TEST_PHASE2.md` untuk detail connection flow.
+
 ## Fitur yang Sudah Diimplementasi
 
 ### 1. FileUtils
@@ -67,17 +70,56 @@ java -cp bin app.Main
 2. Klik "Kirim File" atau "Kirim Folder"
 3. Harus muncul error dialog: "Pilih device tujuan terlebih dahulu!"
 
+## Integration Test (Phase 2 + 3)
+
+### Test Full Flow: Select File → Connect → Prepare
+
+1. Jalankan 2 instance aplikasi
+2. Di Sender:
+   - Pilih device dari list
+   - Klik "📄 Kirim File"
+   - Pilih file test
+
+**Expected Output:**
+
+```
+[Controller] Sending file: test.txt to User-123 (192.168.1.5)
+[TransferManager] Preparing to send: test.txt (1.23 KB) to User-123 (192.168.1.5)
+[ConnectionManager] Connecting to 192.168.1.5:1234
+[ConnectionManager] Connected to 192.168.1.5
+[Controller] Connection established to: 192.168.1.5
+[TransferManager] Connection established, ready to transfer
+[TransferManager] Socket: /192.168.1.5:1234
+```
+
+3. Test dengan folder:
+   - Klik "📁 Kirim Folder"
+   - Pilih folder test
+
+**Expected Output:**
+
+```
+[FileUtils] Zipping folder: MyFolder -> MyFolder_123456.zip
+[FileUtils] Zip completed: /tmp/MyFolder_123456.zip (2.45 MB)
+[TransferManager] Preparing to send: MyFolder_123456.zip (2.45 MB) to User-123
+[ConnectionManager] Connecting to 192.168.1.5:1234
+[ConnectionManager] Connected to 192.168.1.5
+```
+
 ## Next Phase
 
-Phase 4 akan implementasi:
+**Phase 4 (CRITICAL)** akan implementasi:
 
-- SenderTask - Actual file transfer via TCP
-- ReceiverTask - Receive file via TCP
-- Protocol - Handshake & data transfer protocol
-- Progress UI - Real-time progress bar & speed
+- **Protocol.java** - Define message format (HANDSHAKE, FILE_INFO, DATA, ACK)
+- **SenderTask.java** - Actual file transfer via TCP socket
+- **ReceiverTask.java** - Receive & save file
+- **Progress tracking** - Real-time progress & speed calculation
+
+Tanpa Phase 4, file tidak akan benar-benar ter-transfer (masih placeholder).
 
 ## Notes
 
 - Folder akan di-zip otomatis ke temporary file
 - Temporary zip file akan auto-delete saat aplikasi close
 - MD5 checksum ready untuk verifikasi (Phase 4)
+- Connection handshake sudah terintegrasi (Phase 2)
