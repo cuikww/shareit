@@ -1,5 +1,7 @@
 package ui.frames;
 
+import core.network.Device;
+import ui.panels.DeviceListPanel;
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 import java.awt.*;
@@ -7,7 +9,7 @@ import java.awt.*;
 public class MainFrame extends JFrame {
 
     private JLabel statusLabel;
-    private JPanel devicePanelPlaceholder;   // Area kerja Anggota 2
+    private DeviceListPanel deviceListPanel;
     private JPanel transferPanelPlaceholder; // Area kerja Anggota 3
 
     public MainFrame() {
@@ -29,18 +31,12 @@ public class MainFrame extends JFrame {
         statusLabel.setFont(new Font("Arial", Font.BOLD, 14));
         statusLabel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         headerPanel.add(statusLabel);
-        
+
         add(headerPanel, BorderLayout.NORTH);
 
-        // --- 2. LEFT PANEL (Daftar Teman) ---
-        // Ini nanti diganti dengan 'DeviceListPanel' oleh Anggota 2
-        devicePanelPlaceholder = new JPanel();
-        devicePanelPlaceholder.setPreferredSize(new Dimension(250, 0));
-        devicePanelPlaceholder.setBorder(new TitledBorder(" Perangkat Online (Tugas Anggota 2) "));
-        devicePanelPlaceholder.setBackground(new Color(240, 240, 240));
-        devicePanelPlaceholder.add(new JLabel("<html><i>List teman dari UDP Discovery<br>akan muncul di sini.</i></html>"));
-        
-        add(devicePanelPlaceholder, BorderLayout.WEST);
+        // --- 2. LEFT PANEL (Daftar Device) ---
+        deviceListPanel = new DeviceListPanel();
+        add(deviceListPanel, BorderLayout.WEST);
 
         // --- 3. CENTER PANEL (Daftar Transfer) ---
         // Ini nanti diganti dengan 'TransferListPanel' oleh Anggota 3
@@ -61,5 +57,20 @@ public class MainFrame extends JFrame {
             statusLabel.setText("❌ Server Offline");
             statusLabel.setForeground(new Color(255, 100, 100)); // Merah muda
         }
+    }
+
+    // Fungsi untuk menambah device ke list
+    public void addDevice(Device device) {
+        deviceListPanel.addDevice(device);
+    }
+
+    // Fungsi untuk menghapus device dari list
+    public void removeDevice(Device device) {
+        deviceListPanel.removeDevice(device);
+    }
+
+    // Fungsi untuk mendapatkan device yang dipilih
+    public Device getSelectedDevice() {
+        return deviceListPanel.getSelectedDevice();
     }
 }
