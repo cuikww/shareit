@@ -1,5 +1,6 @@
 package ui.frames;
 
+import controllers.MainController;
 import core.network.Device;
 import ui.panels.DeviceListPanel;
 import javax.swing.*;
@@ -11,8 +12,10 @@ public class MainFrame extends JFrame {
     private JLabel statusLabel;
     private DeviceListPanel deviceListPanel;
     private JPanel transferPanelPlaceholder; // Area kerja Anggota 3
+    private MainController controller;
 
-    public MainFrame() {
+    public MainFrame(MainController controller) {
+        this.controller = controller;
         initUI();
     }
 
@@ -37,6 +40,23 @@ public class MainFrame extends JFrame {
         // --- 2. LEFT PANEL (Daftar Device) ---
         deviceListPanel = new DeviceListPanel();
         add(deviceListPanel, BorderLayout.WEST);
+
+        // --- 2.5. BOTTOM PANEL (Action Buttons) ---
+        JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
+        actionPanel.setBackground(new Color(240, 240, 240));
+
+        JButton sendFileBtn = new JButton("📄 Kirim File");
+        sendFileBtn.setPreferredSize(new Dimension(150, 35));
+        sendFileBtn.addActionListener(e -> controller.handleSendFile());
+
+        JButton sendFolderBtn = new JButton("📁 Kirim Folder");
+        sendFolderBtn.setPreferredSize(new Dimension(150, 35));
+        sendFolderBtn.addActionListener(e -> controller.handleSendFolder());
+
+        actionPanel.add(sendFileBtn);
+        actionPanel.add(sendFolderBtn);
+
+        add(actionPanel, BorderLayout.SOUTH);
 
         // --- 3. CENTER PANEL (Daftar Transfer) ---
         // Ini nanti diganti dengan 'TransferListPanel' oleh Anggota 3
@@ -72,5 +92,15 @@ public class MainFrame extends JFrame {
     // Fungsi untuk mendapatkan device yang dipilih
     public Device getSelectedDevice() {
         return deviceListPanel.getSelectedDevice();
+    }
+
+    // Fungsi untuk menampilkan error dialog
+    public void showError(String message) {
+        JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE);
+    }
+
+    // Fungsi untuk menampilkan info dialog
+    public void showInfo(String message) {
+        JOptionPane.showMessageDialog(this, message, "Info", JOptionPane.INFORMATION_MESSAGE);
     }
 }
