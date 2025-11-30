@@ -74,7 +74,8 @@ public class TransferManager {
                 System.out.println("[TransferManager] Socket: " + socket.getInetAddress() + ":" + socket.getPort());
 
                 // 5. Create sender task (akan diimplementasi di phase berikutnya)
-                SenderTask task = new SenderTask(fileToSend, socket, transferId, listener);
+                SenderTask task = new SenderTask(fileToSend, socket, transferId, listener,
+                        System.getProperty("user.name"));
                 activeTasks.put(transferId, task);
                 task.start();
 
@@ -136,6 +137,38 @@ public class TransferManager {
      */
     private String generateTransferId(File file, Device device) {
         return System.currentTimeMillis() + "_" + file.getName() + "_" + device.getIpAddress();
+    }
+
+    /**
+     * Terima file dari device lain (incoming connection)
+     */
+    public void receiveFile(Socket clientSocket, String savePath) {
+        executorService.submit(() -> {
+            try {
+                // Generate transfer ID untuk incoming transfer
+                String transferId = "incoming_" + System.currentTimeMillis();
+
+                System.out.println("[TransferManager] Incoming transfer from: " + clientSocket.getInetAddress());
+
+                // Create receiver task
+                ReceiverTask task = new ReceiverTask(clientSocket, savePath, transferId, listener);
+                activeTasks.put(transferId, task);
+                task.start();
+
+            } catch (Exception e) {
+                System.err.println("[TransferManager] Error handling incoming transfer: " + e.getMessage());
+                e.printStackTrace();
+
+                try {
+                    clientSocket.close();
+                } catch (IOException ignored) {
+                }
+
+                if (listener != null) {
+                    listener.onTransferFailed("unknown", "Error receiving file: " + e.getMessage());
+                }
+            }
+        });
     }
 
     /**

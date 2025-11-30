@@ -3,15 +3,15 @@ package ui.frames;
 import controllers.MainController;
 import core.network.Device;
 import ui.panels.DeviceListPanel;
+import ui.panels.TransferListPanel;
 import javax.swing.*;
-import javax.swing.border.TitledBorder;
 import java.awt.*;
 
 public class MainFrame extends JFrame {
 
     private JLabel statusLabel;
     private DeviceListPanel deviceListPanel;
-    private JPanel transferPanelPlaceholder; // Area kerja Anggota 3
+    private TransferListPanel transferListPanel;
     private MainController controller;
 
     public MainFrame(MainController controller) {
@@ -59,13 +59,8 @@ public class MainFrame extends JFrame {
         add(actionPanel, BorderLayout.SOUTH);
 
         // --- 3. CENTER PANEL (Daftar Transfer) ---
-        // Ini nanti diganti dengan 'TransferListPanel' oleh Anggota 3
-        transferPanelPlaceholder = new JPanel();
-        transferPanelPlaceholder.setBorder(new TitledBorder(" Antrian Transfer (Tugas Anggota 3) "));
-        transferPanelPlaceholder.setBackground(Color.WHITE);
-        transferPanelPlaceholder.add(new JLabel("<html><i>Progress Bar & Speed<br>akan muncul di sini.</i></html>"));
-
-        add(transferPanelPlaceholder, BorderLayout.CENTER);
+        transferListPanel = new TransferListPanel();
+        add(transferListPanel, BorderLayout.CENTER);
     }
 
     // Fungsi untuk mengubah teks status server dari Controller
@@ -102,5 +97,10 @@ public class MainFrame extends JFrame {
     // Fungsi untuk menampilkan info dialog
     public void showInfo(String message) {
         JOptionPane.showMessageDialog(this, message, "Info", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    // Getter untuk TransferListPanel
+    public TransferListPanel getTransferListPanel() {
+        return transferListPanel;
     }
 }

@@ -4,11 +4,16 @@ import core.network.ConnectionManager;
 import core.network.DiscoveryService;
 import core.network.Device;
 import core.transfer.TransferManager;
+import core.transfer.TransferModel;
+import core.transfer.TransferModel.TransferStatus;
 import ui.frames.MainFrame;
+import ui.panels.TransferListPanel;
 import javax.swing.SwingUtilities;
 import javax.swing.JFileChooser;
 import java.io.File;
 import java.net.Socket;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MainController implements ConnectionManager.ServerListener,
         DiscoveryService.DiscoveryListener,
@@ -18,10 +23,13 @@ public class MainController implements ConnectionManager.ServerListener,
     private final ConnectionManager connectionManager;
     private final DiscoveryService discoveryService;
     private final TransferManager transferManager;
+    private final TransferListPanel transferListPanel;
+    private final Map<String, TransferModel> activeTransfers = new ConcurrentHashMap<>();
 
     public MainController() {
         // 1. Siapkan UI
         this.mainFrame = new MainFrame(this);
+        this.transferListPanel = mainFrame.getTransferListPanel();
 
         // 2. Siapkan Network Manager
         this.connectionManager = new ConnectionManager(this);
@@ -32,6 +40,23 @@ public class MainController implements ConnectionManager.ServerListener,
         // 4. Siapkan Transfer Manager
         this.transferManager = new TransferManager(this);
         this.transferManager.setConnectionManager(this.connectionManager);
+        // Wire UI control actions to TransferManager
+        this.transferListPanel.setControlListener(new TransferListPanel.ControlListener() {
+            @Override
+            public void pauseTransfer(String transferId) {
+                transferManager.pauseTransfer(transferId);
+            }
+
+            @Override
+            public void resumeTransfer(String transferId) {
+                transferManager.resumeTransfer(transferId);
+            }
+
+            @Override
+            public void cancelTransfer(String transferId) {
+                transferManager.cancelTransfer(transferId);
+            }
+        });
     }
 
     public void startApp() {
@@ -68,7 +93,11 @@ public class MainController implements ConnectionManager.ServerListener,
     @Override
     public void onClientConnected(Socket socket) {
         System.out.println("[Controller] Client connected from: " + socket.getInetAddress());
-        // Receiver side - akan handle di ReceiverTask (Phase 4)
+
+        // Spawn ReceiverTask untuk handle incoming file transfer
+        // Files akan di-save ke "received" folder
+        String savePath = new File("received").getAbsolutePath();
+        transferManager.receiveFile(socket, savePath);
     }
 
     @Override
@@ -108,24 +137,62 @@ public class MainController implements ConnectionManager.ServerListener,
     @Override
     public void onTransferStarted(String transferId, String fileName) {
         System.out.println("[Controller] Transfer started: " + fileName);
-        // TODO: Update UI transfer list
+
+        // Create TransferModel untuk track progress
+        TransferModel model = new TransferModel(transferId, fileName, 0);
+        model.setStatus(TransferStatus.TRANSFERRING);
+        activeTransfers.put(transferId, model);
+
+        // Update UI - add ke transfer list panel
+        SwingUtilities.invokeLater(() -> {
+            transferListPanel.updateTransfer(model);
+        });
     }
 
     @Override
     public void onTransferProgress(String transferId, long bytesTransferred, long totalBytes) {
-        // TODO: Update progress bar
+        TransferModel model = activeTransfers.get(transferId);
+        if (model != null) {
+            model.setBytesTransferred(bytesTransferred);
+
+            // Update UI real-time (dengan SwingUtilities.invokeLater untuk thread-safe)
+            SwingUtilities.invokeLater(() -> {
+                transferListPanel.updateTransfer(model);
+            });
+        }
     }
 
     @Override
     public void onTransferCompleted(String transferId) {
         System.out.println("[Controller] Transfer completed: " + transferId);
-        // TODO: Update UI
+
+        TransferModel model = activeTransfers.get(transferId);
+        if (model != null) {
+            model.setStatus(TransferStatus.COMPLETED);
+
+            // Update UI
+            SwingUtilities.invokeLater(() -> {
+                transferListPanel.updateTransfer(model);
+                // Bisa di-remove dari active list setelah beberapa waktu
+                // atau biarkan tetap terlihat untuk history
+            });
+        }
     }
 
     @Override
     public void onTransferFailed(String transferId, String error) {
         System.err.println("[Controller] Transfer failed: " + error);
-        // TODO: Show error dialog
+
+        TransferModel model = activeTransfers.get(transferId);
+        if (model != null) {
+            model.setStatus(TransferStatus.FAILED);
+
+            // Update UI
+            SwingUtilities.invokeLater(() -> {
+                transferListPanel.updateTransfer(model);
+                mainFrame.showError("Transfer failed: " + error);
+            });
+        }
     }
 
     // --- Action Handlers ---
