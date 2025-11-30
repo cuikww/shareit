@@ -74,9 +74,9 @@ public class TransferManager {
                 System.out.println("[TransferManager] Socket: " + socket.getInetAddress() + ":" + socket.getPort());
 
                 // 5. Create sender task (akan diimplementasi di phase berikutnya)
-                // SenderTask task = new SenderTask(fileToSend, socket, transferId, listener);
-                // activeTasks.put(transferId, task);
-                // task.start();
+                SenderTask task = new SenderTask(fileToSend, socket, transferId, listener);
+                activeTasks.put(transferId, task);
+                task.start();
 
                 // Sementara ini placeholder
                 System.out.println("[TransferManager] Transfer task created: " + transferId);
