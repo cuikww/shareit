@@ -15,6 +15,8 @@ public class DiscoveryService implements Runnable {
     private boolean isRunning;
     private Thread listenerThread;
     private Thread broadcasterThread;
+    // apakah aplikasi sedang mengumumkan keberadaan (broadcast presence)
+    private volatile boolean broadcastingEnabled = false;
     private Thread cleanupThread;
 
     // Menyimpan device yang ditemukan
@@ -22,6 +24,7 @@ public class DiscoveryService implements Runnable {
 
     public interface DiscoveryListener {
         void onDeviceDiscovered(Device device);
+        void onDeviceUpdated(Device device);
 
         void onDeviceRemoved(Device device);
     }
@@ -49,15 +52,47 @@ public class DiscoveryService implements Runnable {
         listenerThread = new Thread(this, "Discovery-Listener");
         listenerThread.start();
 
-        // Thread untuk broadcasting
-        broadcasterThread = new Thread(this::broadcastLoop, "Discovery-Broadcaster");
-        broadcasterThread.start();
+        // NOTE: broadcasting will start only when explicitly enabled by caller
 
         // Thread untuk cleanup device yang timeout
         cleanupThread = new Thread(this::cleanupLoop, "Discovery-Cleanup");
         cleanupThread.start();
 
         System.out.println("[Discovery] Service started on port " + Config.UDP_PORT);
+    }
+
+    /**
+     * Trigger an immediate broadcast with the current username. Useful when the app changes
+     * the username and we want peers to see the updated display name quickly.
+     */
+    public void announceNow() {
+        // Best-effort; ensure socket/service has been started
+        // Only announce presence if broadcasting is enabled (we only show as online when user opts-in)
+        if (!isRunning || socket == null || socket.isClosed() || !broadcastingEnabled) return;
+        new Thread(this::broadcastPresence, "Discovery-Announce").start();
+    }
+
+    /**
+     * Turn on continuous broadcasting (announce presence periodically).
+     */
+    public void startBroadcasting() {
+        if (!isRunning) return;
+        if (broadcastingEnabled) return;
+        broadcastingEnabled = true;
+
+        broadcasterThread = new Thread(this::broadcastLoop, "Discovery-Broadcaster");
+        broadcasterThread.start();
+    }
+
+    /**
+     * Stop broadcasting presence.
+     */
+    public void stopBroadcasting() {
+        broadcastingEnabled = false;
+        if (broadcasterThread != null) {
+            broadcasterThread.interrupt();
+            broadcasterThread = null;
+        }
     }
 
     public void stop() {
@@ -140,8 +175,13 @@ public class DiscoveryService implements Runnable {
                 listener.onDeviceDiscovered(device);
             }
         } else {
-            // Update last seen
+            // Update last seen and username if changed
             device.updateLastSeen();
+            if (!device.getUsername().equals(username)) {
+                System.out.println("[Discovery] Device updated name: " + device.getIpAddress() + " -> " + username);
+                device.setUsername(username);
+                if (listener != null) listener.onDeviceUpdated(device);
+            }
         }
     }
 

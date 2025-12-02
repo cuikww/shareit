@@ -1,4 +1,4 @@
-# ShareIt Clone - Completion Report
+# BreezeShare - Completion Report
 
 **Project Status:** Phase 5 (Progress UI) ✅ COMPLETE  
 **Overall Progress:** 86% (5 of 6 phases done)  
@@ -8,7 +8,7 @@
 
 ## 🎯 Project Summary
 
-ShareIt Clone adalah aplikasi file sharing peer-to-peer berbasis Java yang menggunakan TCP Socket untuk transfer file dan UDP Broadcast untuk device discovery. Proyek ini dikembangkan secara sequential dengan 6 phase, masing-masing dengan fitur spesifik.
+BreezeShare adalah aplikasi file sharing peer-to-peer berbasis Java yang menggunakan TCP Socket untuk transfer file dan UDP Broadcast untuk device discovery. Proyek ini dikembangkan secara sequential dengan 6 phase, masing-masing dengan fitur spesifik.
 
 **Tech Stack:**
 - Java Swing (GUI desktop)
@@ -374,7 +374,7 @@ Proyek ini mengajarkan:
 
 ## ✨ Conclusion
 
-ShareIt Clone adalah contoh excellent dari:
+BreezeShare adalah contoh excellent dari:
 - **Professional software development** dengan sequential phases
 - **Clean architecture** dengan proper layering
 - **Best practices** di Java programming

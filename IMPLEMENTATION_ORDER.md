@@ -1,4 +1,4 @@
-# Implementation Order - ShareIt Clone
+# Implementation Order - BreezeShare
 
 ## ✅ Phase 1: Server Startup (DONE)
 

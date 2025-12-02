@@ -1,8 +1,8 @@
-# ShareIt Clone - Progress Report
+# BreezeShare - Progress Report
 
 ## 📋 Project Overview
 
-Aplikasi file sharing peer-to-peer mirip ShareIt menggunakan Java Socket Programming.
+Aplikasi file sharing peer-to-peer mirip BreezeShare menggunakan Java Socket Programming.
 
 **Tech Stack:**
 

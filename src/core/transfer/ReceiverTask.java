@@ -26,6 +26,7 @@ public class ReceiverTask extends TransferTask {
     private final String savePath;
     private final String transferId;
     private final TransferListener listener;
+    private final TransferManager.IncomingTransferListener incomingTransferListener;
     
     // Progress tracking
     private long totalBytes;
@@ -33,11 +34,13 @@ public class ReceiverTask extends TransferTask {
     private File receivedFile;
     private FileOutputStream fileOut;
 
-    public ReceiverTask(Socket socket, String savePath, String transferId, TransferListener listener) {
+    public ReceiverTask(Socket socket, String savePath, String transferId, TransferListener listener, 
+                        TransferManager.IncomingTransferListener incomingTransferListener) {
         super(socket);
         this.savePath = savePath;
         this.transferId = transferId;
         this.listener = listener;
+        this.incomingTransferListener = incomingTransferListener;
     }
 
     @Override
@@ -48,6 +51,11 @@ public class ReceiverTask extends TransferTask {
         try {
             in = socket.getInputStream();
             out = socket.getOutputStream();
+
+            // Set socket read timeout so we can detect missing peers faster instead of blocking forever
+            try {
+                socket.setSoTimeout(30_000); // 30 seconds
+            } catch (Exception ignored) { }
             
             log("ReceiverTask started, listening for incoming file...");
             
@@ -60,6 +68,16 @@ public class ReceiverTask extends TransferTask {
             
             HandshakeMessage handshake = HandshakeMessage.fromBytes(msg.payload);
             log("Received HANDSHAKE from " + handshake.username + " (version " + handshake.version + ")");
+            
+            // Check if we should ask user to confirm this incoming transfer
+            if (incomingTransferListener != null) {
+                boolean accepted = incomingTransferListener.onIncomingTransfer(transferId, handshake.username, socket);
+                if (!accepted) {
+                    log("Incoming transfer rejected by user");
+                    socket.close();
+                    return;
+                }
+            }
             
             // Step 2: Send ACK
             Message ack = new Message(Protocol.OP_ACK, transferId.getBytes());
@@ -82,8 +100,17 @@ public class ReceiverTask extends TransferTask {
                 listener.onTransferStarted(transferId, fileInfo.filename);
             }
             
-            // Step 4: Send ACK
-            ack = new Message(Protocol.OP_ACK, transferId.getBytes());
+            // Step 4: Send ACK. If a partial file already exists locally, include bytesReceived to allow resume.
+            long existingBytes = 0;
+            File possibleFile = new File(savePath, fileInfo.filename);
+            if (possibleFile.exists()) {
+                existingBytes = possibleFile.length();
+                // Cap existingBytes to totalBytes
+                if (existingBytes > totalBytes) existingBytes = totalBytes;
+            }
+
+            AckMessage ackMsgObj = new AckMessage(transferId, existingBytes);
+            ack = new Message(Protocol.OP_ACK, ackMsgObj.toBytes());
             Protocol.writeMessage(out, ack);
             
             // Create output file
@@ -95,11 +122,22 @@ public class ReceiverTask extends TransferTask {
             }
             
             log("Saving file to: " + receivedFile.getAbsolutePath());
-            fileOut = new FileOutputStream(receivedFile);
+            // If there is an existing partial file, open in append mode and continue
+            if (existingBytes > 0 && receivedFile.exists()) {
+                log("Resuming existing file at offset: " + existingBytes);
+                fileOut = new FileOutputStream(receivedFile, true);
+                bytesReceived = existingBytes;
+            } else {
+                fileOut = new FileOutputStream(receivedFile);
+                bytesReceived = 0;
+            }
             
             // Step 5: Receive DATA chunks
+            // Keep reading until we receive an explicit COMPLETE message from sender.
+            // Previously the code stopped when bytesReceived >= totalBytes which could leave
+            // the trailing COMPLETE message in the stream and cause protocol misalignment.
             log("Waiting for data...");
-            while (bytesReceived < totalBytes) {
+            while (true) {
                 // Check pause/cancel
                 checkPaused();
                 checkCancelled();
@@ -108,6 +146,12 @@ public class ReceiverTask extends TransferTask {
                 
                 if (msg.operation == Protocol.OP_COMPLETE) {
                     log("Received COMPLETE message");
+
+                    // If we get COMPLETE before receiving the expected number of bytes, that's an error
+                    if (bytesReceived != totalBytes) {
+                        throw new IOException("Received COMPLETE before all data was received (" + bytesReceived + "/" + totalBytes + ")");
+                    }
+
                     break;
                 }
                 

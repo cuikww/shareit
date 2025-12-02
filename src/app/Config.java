@@ -15,11 +15,11 @@ public class Config {
     public static final int BROADCAST_INTERVAL = 3000;
 
     // Nama user default (Nanti bisa diambil dari input user)
-    public static String USERNAME = "User-" + (int) (Math.random() * 1000);
+    public static String USERNAME = "BreezeUser-" + (int) (Math.random() * 1000);
 
     // Folder untuk menyimpan file yang diterima
     // System.getProperty("user.home") mengambil folder Home user (C:\Users\Nama)
-    public static final Path SAVE_DIR = Paths.get(System.getProperty("user.home"), "Downloads", "ShareIt_Received");
+    public static final Path SAVE_DIR = Paths.get(System.getProperty("user.home"), "Downloads", "BreezeShare_Received");
 
     // Pastikan folder download ada
     static {

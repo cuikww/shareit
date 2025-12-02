@@ -2,11 +2,10 @@ package core.utils;
 
 import java.io.*;
 import java.nio.ByteBuffer;
-import java.util.HashMap;
-import java.util.Map;
+// removed unused imports
 
 /**
- * Protocol definition untuk file transfer di ShareIt
+ * Protocol definition untuk file transfer di BreezeShare
  * 
  * Message Format:
  * [1 byte: Operation] [4 bytes: Payload length] [Payload]
@@ -173,7 +172,7 @@ public class Protocol {
     public static Message readMessage(InputStream in) throws IOException {
         // Baca header (1 byte operation + 4 bytes length)
         byte[] header = new byte[HEADER_SIZE];
-        int read = in.read(header);
+        int read = readFully(in, header, 0, HEADER_SIZE);
         if (read != HEADER_SIZE) {
             throw new IOException("Premature end of stream");
         }
@@ -188,7 +187,7 @@ public class Protocol {
         // Baca payload
         byte[] payload = new byte[payloadLength];
         if (payloadLength > 0) {
-            read = in.read(payload);
+            read = readFully(in, payload, 0, payloadLength);
             if (read != payloadLength) {
                 throw new IOException("Incomplete payload read");
             }
@@ -253,5 +252,23 @@ public class Protocol {
         public static final int DISK_FULL = 1004;
         public static final int PERMISSION_DENIED = 1005;
         public static final int UNKNOWN_ERROR = 9999;
+    }
+
+    /**
+     * Utility: read exactly 'len' bytes from InputStream into buffer at offset off.
+     * Returns number of bytes read (== len) or -1 if end-of-stream encountered before reading any bytes.
+     */
+    private static int readFully(InputStream in, byte[] buffer, int off, int len) throws IOException {
+        int total = 0;
+        while (total < len) {
+            int r = in.read(buffer, off + total, len - total);
+            if (r == -1) {
+                // if nothing has been read, return -1 so caller can decide; otherwise EOF in the middle
+                if (total == 0) return -1;
+                throw new IOException("Premature end of stream while reading payload/header");
+            }
+            total += r;
+        }
+        return total;
     }
 }

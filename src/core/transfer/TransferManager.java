@@ -15,6 +15,8 @@ public class TransferManager {
 
     private final ExecutorService executorService;
     private final Map<String, TransferTask> activeTasks = new ConcurrentHashMap<>();
+    // metadata for outgoing transfers so we can resume/retry if they fail
+    private final Map<String, TransferInfo> transferMeta = new ConcurrentHashMap<>();
     private ConnectionManager connectionManager;
 
     public interface TransferListener {
@@ -27,11 +29,24 @@ public class TransferManager {
         void onTransferFailed(String transferId, String error);
     }
 
+    public interface IncomingTransferListener {
+        /**
+         * Called when incoming transfer is detected (after receiving handshake with sender's username).
+         * Callback should return true to accept or false to reject.
+         */
+        boolean onIncomingTransfer(String transferId, String senderUsername, Socket socket);
+    }
+
     private final TransferListener listener;
+    private IncomingTransferListener incomingTransferListener;
 
     public TransferManager(TransferListener listener) {
         this.listener = listener;
         this.executorService = Executors.newCachedThreadPool();
+    }
+
+    public void setIncomingTransferListener(IncomingTransferListener listener) {
+        this.incomingTransferListener = listener;
     }
 
     public void setConnectionManager(ConnectionManager connectionManager) {
@@ -41,7 +56,7 @@ public class TransferManager {
     /**
      * Kirim file/folder ke device target
      */
-    public void sendFile(File inputPath, Device targetDevice) {
+    public void sendFile(File inputPath, Device targetDevice, String username) {
         executorService.submit(() -> {
             Socket socket = null;
             try {
@@ -73,9 +88,11 @@ public class TransferManager {
                 System.out.println("[TransferManager] Connection established, ready to transfer");
                 System.out.println("[TransferManager] Socket: " + socket.getInetAddress() + ":" + socket.getPort());
 
-                // 5. Create sender task (akan diimplementasi di phase berikutnya)
+                // 5. Store transfer meta and create sender task
+                transferMeta.put(transferId, new TransferInfo(fileToSend, targetDevice, username));
+
                 SenderTask task = new SenderTask(fileToSend, socket, transferId, listener,
-                        System.getProperty("user.name"));
+                    username);
                 activeTasks.put(transferId, task);
                 task.start();
 
@@ -116,9 +133,32 @@ public class TransferManager {
      */
     public void resumeTransfer(String transferId) {
         TransferTask task = activeTasks.get(transferId);
+
         if (task != null) {
+            // if task exists and thread is alive, just resume
             task.resume();
+            return;
         }
+
+        // If there is no active task (e.g., previous failed), try to re-create sender using saved metadata
+        TransferInfo info = transferMeta.get(transferId);
+        if (info == null) {
+            System.err.println("[TransferManager] No transfer metadata found for resume: " + transferId);
+            return;
+        }
+
+        executorService.submit(() -> {
+            try {
+                Socket socket = connectionManager.connectTo(info.device.getIpAddress());
+                SenderTask newTask = new SenderTask(info.file, socket, transferId, listener, info.username);
+                activeTasks.put(transferId, newTask);
+                newTask.start();
+                System.out.println("[TransferManager] Resuming transfer: " + transferId);
+            } catch (IOException e) {
+                System.err.println("[TransferManager] Failed to resume transfer: " + e.getMessage());
+                if (listener != null) listener.onTransferFailed(transferId, "Resume failed: " + e.getMessage());
+            }
+        });
     }
 
     /**
@@ -129,6 +169,7 @@ public class TransferManager {
         if (task != null) {
             task.cancel();
             activeTasks.remove(transferId);
+            transferMeta.remove(transferId);
         }
     }
 
@@ -137,6 +178,18 @@ public class TransferManager {
      */
     private String generateTransferId(File file, Device device) {
         return System.currentTimeMillis() + "_" + file.getName() + "_" + device.getIpAddress();
+    }
+
+    private static class TransferInfo {
+        final File file;
+        final Device device;
+        final String username;
+
+        TransferInfo(File file, Device device, String username) {
+            this.file = file;
+            this.device = device;
+            this.username = username;
+        }
     }
 
     /**
@@ -151,7 +204,7 @@ public class TransferManager {
                 System.out.println("[TransferManager] Incoming transfer from: " + clientSocket.getInetAddress());
 
                 // Create receiver task
-                ReceiverTask task = new ReceiverTask(clientSocket, savePath, transferId, listener);
+                ReceiverTask task = new ReceiverTask(clientSocket, savePath, transferId, listener, incomingTransferListener);
                 activeTasks.put(transferId, task);
                 task.start();
 

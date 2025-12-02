@@ -1,10 +1,10 @@
-# ShareIt Clone - Sequential Development Roadmap
+# BreezeShare - Sequential Development Roadmap
 
 **Project Status:** Phase 5 Implementation COMPLETE ✅
 
 ## Overview
 
-Aplikasi file sharing peer-to-peer mirip ShareIt menggunakan Java Socket Programming dengan Swing GUI.
+Aplikasi file sharing peer-to-peer mirip BreezeShare menggunakan Java Socket Programming dengan Swing GUI.
 
 **Tech Stack:**
 - Java Swing (GUI)
@@ -438,6 +438,6 @@ For future iterations:
 ---
 
 *Document generated: December 2025*
-*Project: ShareIt Clone - Java Socket Programming*
+*Project: BreezeShare - Java Socket Programming*
 *Status: 86% Complete ✅*
 

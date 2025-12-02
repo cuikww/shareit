@@ -2,13 +2,17 @@ package core.network;
 
 public class Device {
     private final String ipAddress;
-    private final String username;
+    private String username;
     private long lastSeen;
 
     public Device(String ipAddress, String username) {
         this.ipAddress = ipAddress;
         this.username = username;
         this.lastSeen = System.currentTimeMillis();
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
     }
 
     public String getIpAddress() {

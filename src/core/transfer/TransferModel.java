@@ -16,10 +16,12 @@ public class TransferModel {
     private String fileName;
     private long totalBytes;
     private long bytesTransferred = 0;
+    private Direction direction = Direction.OUTGOING;
     private TransferStatus status;
     private long startTime;
     private long lastUpdateTime;
     private long lastBytesTransferred = 0;
+    private double speedKBps = 0.0; // smoothed speed (KB/s)
 
     public enum TransferStatus {
         WAITING("Waiting"),
@@ -40,22 +42,56 @@ public class TransferModel {
         }
     }
 
+    public enum Direction {
+        INCOMING,
+        OUTGOING
+    }
+
     // ==================== Constructor ====================
 
-    public TransferModel(String transferId, String fileName, long totalBytes) {
+    public TransferModel(String transferId, String fileName, long totalBytes, Direction direction) {
         this.transferId = transferId;
         this.fileName = fileName;
         this.totalBytes = totalBytes;
+        this.direction = direction;
         this.status = TransferStatus.WAITING;
         this.startTime = System.currentTimeMillis();
         this.lastUpdateTime = startTime;
     }
 
+    public Direction getDirection() { return direction; }
+
     // ==================== Setters ====================
 
     public void setBytesTransferred(long bytes) {
-        this.bytesTransferred = Math.min(bytes, totalBytes); // Cap at totalBytes
-        this.lastUpdateTime = System.currentTimeMillis();
+        long now = System.currentTimeMillis();
+
+        // Cap at totalBytes if totalBytes is known (>0), otherwise allow reporting
+        if (totalBytes > 0) {
+            this.bytesTransferred = Math.min(bytes, totalBytes);
+        } else {
+            this.bytesTransferred = bytes;
+        }
+
+        // compute instantaneous speed based on delta since last update
+        long deltaBytes = this.bytesTransferred - this.lastBytesTransferred;
+        long deltaMs = now - this.lastUpdateTime;
+        if (deltaMs > 0 && deltaBytes >= 0) {
+            double instKBps = (deltaBytes / 1024.0) / (deltaMs / 1000.0);
+            // simple exponential smoothing to avoid jumps
+            this.speedKBps = (this.speedKBps * 0.7) + (instKBps * 0.3);
+        }
+
+        this.lastUpdateTime = now;
+        this.lastBytesTransferred = this.bytesTransferred;
+    }
+
+    public void setTotalBytes(long totalBytes) {
+        this.totalBytes = totalBytes;
+        // re-cap bytesTransferred in case it exceeded the new total
+        if (this.bytesTransferred > this.totalBytes && this.totalBytes > 0) {
+            this.bytesTransferred = this.totalBytes;
+        }
     }
 
     public void setStatus(TransferStatus status) {
@@ -104,14 +140,15 @@ public class TransferModel {
      * Get transfer speed in KB/s
      */
     public double getSpeedKBps() {
+        // return last computed/smoothed speed (fallback to total average if not yet computed)
+        if (speedKBps > 0) return speedKBps;
+
         long elapsedMs = System.currentTimeMillis() - startTime;
-        if (elapsedMs == 0) {
-            return 0;
-        }
+        if (elapsedMs == 0) return 0;
 
         double totalKB = bytesTransferred / 1024.0;
         double elapsedSeconds = elapsedMs / 1000.0;
-        return totalKB / elapsedSeconds;
+        return elapsedSeconds > 0 ? totalKB / elapsedSeconds : 0;
     }
 
     /**

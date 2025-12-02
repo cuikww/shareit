@@ -8,6 +8,7 @@ import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.TableCellRenderer;
+import ui.Theme;
 import java.awt.*;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -28,13 +29,18 @@ public class TransferListPanel extends JPanel {
     private JTable transferTable;
     private TransferTableModel tableModel;
     private List<TransferModel> transfers = new CopyOnWriteArrayList<>();
+    private List<TransferModel> filteredTransfers = new CopyOnWriteArrayList<>();
+    private TransferModel.Direction filterDirection = null; // null = show all
     private JButton toggleBtn;
     private JButton cancelBtn;
     private ControlListener controlListener;
 
     public TransferListPanel() {
-        setLayout(new BorderLayout(5, 5));
-        setBorder(BorderFactory.createTitledBorder("📊 Active Transfers"));
+        setLayout(new BorderLayout(6, 6));
+        setBackground(Theme.BG);
+        javax.swing.border.TitledBorder t = BorderFactory.createTitledBorder("📊 Active Transfers");
+        t.setTitleColor(Theme.TEXT);
+        setBorder(t);
 
         // Create table model
         tableModel = new TransferTableModel();
@@ -44,7 +50,9 @@ public class TransferListPanel extends JPanel {
         transferTable.setRowHeight(50);
         transferTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         transferTable.setShowGrid(true);
-        transferTable.setGridColor(new Color(200, 200, 200));
+        transferTable.setGridColor(Theme.MUTED);
+        transferTable.setBackground(Theme.CARD);
+        transferTable.setForeground(Theme.TEXT);
 
         // Set column widths
         transferTable.getColumnModel().getColumn(0).setPreferredWidth(150); // Filename
@@ -75,6 +83,23 @@ public class TransferListPanel extends JPanel {
                 }
             }
         });
+        // initialize filtered view
+        rebuildFiltered();
+    }
+
+    public void setFilterDirection(TransferModel.Direction dir) {
+        this.filterDirection = dir;
+        rebuildFiltered();
+        SwingUtilities.invokeLater(() -> tableModel.fireTableDataChanged());
+    }
+
+    private void rebuildFiltered() {
+        filteredTransfers.clear();
+        for (TransferModel m : transfers) {
+            if (filterDirection == null || m.getDirection() == filterDirection) {
+                filteredTransfers.add(m);
+            }
+        }
     }
 
     /**
@@ -89,7 +114,7 @@ public class TransferListPanel extends JPanel {
 
         // Cancel button
         cancelBtn = new JButton("✕ Cancel");
-        cancelBtn.setForeground(Color.RED);
+        cancelBtn.setForeground(Theme.WARN.darker());
         cancelBtn.addActionListener(e -> cancelSelectedTransfer());
 
         panel.add(toggleBtn);
@@ -113,12 +138,12 @@ public class TransferListPanel extends JPanel {
 
         if (index >= 0) {
             transfers.set(index, model);
-            final int idx = index; // final copy
-            SwingUtilities.invokeLater(() -> tableModel.fireTableRowsUpdated(idx, idx));
+            rebuildFiltered();
+            SwingUtilities.invokeLater(() -> tableModel.fireTableDataChanged());
         } else {
             transfers.add(model);
-            final int newIdx = transfers.size() - 1; // final copy
-            SwingUtilities.invokeLater(() -> tableModel.fireTableRowsInserted(newIdx, newIdx));
+            rebuildFiltered();
+            SwingUtilities.invokeLater(() -> tableModel.fireTableDataChanged());
         }
     }
 
@@ -136,8 +161,8 @@ public class TransferListPanel extends JPanel {
 
         if (index >= 0) {
             transfers.remove(index);
-            final int finalIndex = index;
-            SwingUtilities.invokeLater(() -> tableModel.fireTableRowsDeleted(finalIndex, finalIndex));
+            rebuildFiltered();
+            SwingUtilities.invokeLater(() -> tableModel.fireTableDataChanged());
         }
     }
 
@@ -166,7 +191,7 @@ public class TransferListPanel extends JPanel {
     public TransferModel getSelectedTransfer() {
         int row = transferTable.getSelectedRow();
         if (row >= 0) {
-            return transfers.get(row);
+            if (row < filteredTransfers.size()) return filteredTransfers.get(row);
         }
         return null;
     }
@@ -295,7 +320,7 @@ public class TransferListPanel extends JPanel {
 
         @Override
         public int getRowCount() {
-            return transfers.size();
+            return filteredTransfers.size();
         }
 
         @Override
@@ -310,7 +335,7 @@ public class TransferListPanel extends JPanel {
 
         @Override
         public Object getValueAt(int row, int column) {
-            TransferModel model = transfers.get(row);
+            TransferModel model = filteredTransfers.get(row);
 
             switch (column) {
                 case 0: // Filename
@@ -377,14 +402,14 @@ public class TransferListPanel extends JPanel {
 
                 // Color based on status
                 if (model.getStatus() == TransferStatus.COMPLETED) {
-                    progressBar.setForeground(new Color(76, 175, 80)); // Green
+                    progressBar.setForeground(Theme.SUCCESS);
                 } else if (model.getStatus() == TransferStatus.FAILED ||
                         model.getStatus() == TransferStatus.CANCELLED) {
-                    progressBar.setForeground(new Color(244, 67, 54)); // Red
+                    progressBar.setForeground(Theme.WARN);
                 } else if (model.getStatus() == TransferStatus.PAUSED) {
-                    progressBar.setForeground(new Color(255, 152, 0)); // Orange
+                    progressBar.setForeground(Theme.ACCENT.darker());
                 } else {
-                    progressBar.setForeground(new Color(33, 150, 243)); // Blue
+                    progressBar.setForeground(new Color(0x84C5E8));
                 }
 
                 if (isSelected) {
