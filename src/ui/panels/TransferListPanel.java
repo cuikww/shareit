@@ -2,38 +2,33 @@ package ui.panels;
 
 import core.transfer.TransferModel;
 import core.transfer.TransferModel.TransferStatus;
+import ui.Theme;
 
 import javax.swing.*;
-import javax.swing.event.ListSelectionEvent;
-import javax.swing.event.ListSelectionListener;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.TableCellRenderer;
-import ui.Theme;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/**
- * Panel untuk menampilkan list transfer dengan progress bar
- * 
- * Diagram alur (dari Phase 3 UML):
- * SenderTask.setBytesTransferred(currentBytes)
- * → Model.calculatePercent() (e.g., 45%)
- * → SwingUtilities.invokeLater(() -> refreshTable())
- * → fireTableDataChanged()
- * → ProgressBarCellRenderer.getTableCellRendererComponent()
- * → UI progress bar bergerak ke 45%
- */
 public class TransferListPanel extends JPanel {
 
     private JTable transferTable;
     private TransferTableModel tableModel;
+    
+    // Data Source
     private List<TransferModel> transfers = new CopyOnWriteArrayList<>();
     private List<TransferModel> filteredTransfers = new CopyOnWriteArrayList<>();
-    private TransferModel.Direction filterDirection = null; // null = show all
+    
+    private TransferModel.Direction filterDirection = null; 
     private JButton toggleBtn;
     private JButton cancelBtn;
     private ControlListener controlListener;
+
+    // --- MEMORY: Menyimpan ID yang sedang dipilih ---
+    private String selectedTransferId = null;
 
     public TransferListPanel() {
         setLayout(new BorderLayout(6, 6));
@@ -42,10 +37,8 @@ public class TransferListPanel extends JPanel {
         t.setTitleColor(Theme.TEXT);
         setBorder(t);
 
-        // Create table model
+        // Init Model & Table
         tableModel = new TransferTableModel();
-
-        // Create table
         transferTable = new JTable(tableModel);
         transferTable.setRowHeight(50);
         transferTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -54,43 +47,97 @@ public class TransferListPanel extends JPanel {
         transferTable.setBackground(Theme.CARD);
         transferTable.setForeground(Theme.TEXT);
 
-        // Set column widths
+        // Column Widths
         transferTable.getColumnModel().getColumn(0).setPreferredWidth(150); // Filename
         transferTable.getColumnModel().getColumn(1).setPreferredWidth(200); // Progress
         transferTable.getColumnModel().getColumn(2).setPreferredWidth(100); // Speed
-        transferTable.getColumnModel().getColumn(3).setPreferredWidth(100); // Time Left
+        transferTable.getColumnModel().getColumn(3).setPreferredWidth(80);  // Time
         transferTable.getColumnModel().getColumn(4).setPreferredWidth(100); // Status
 
-        // Set custom renderer untuk progress bar
-        transferTable.getColumnModel().getColumn(1).setCellRenderer(
-                new ProgressBarCellRenderer());
+        // Renderer
+        transferTable.getColumnModel().getColumn(1).setCellRenderer(new ProgressBarCellRenderer());
 
-        // Add scroll pane
         JScrollPane scrollPane = new JScrollPane(transferTable);
         scrollPane.setPreferredSize(new Dimension(600, 150));
         add(scrollPane, BorderLayout.CENTER);
 
-        // Add button panel
+        // Buttons
         JPanel buttonPanel = createButtonPanel();
         add(buttonPanel, BorderLayout.SOUTH);
 
-        // Update toggle label when selection changes
-        transferTable.getSelectionModel().addListSelectionListener(new ListSelectionListener() {
+        // --- LISTENER PENTING: MOUSE CLICK ---
+        // Menggunakan MouseListener lebih stabil daripada SelectionListener untuk kasus realtime update
+        transferTable.addMouseListener(new MouseAdapter() {
             @Override
-            public void valueChanged(ListSelectionEvent e) {
-                if (!e.getValueIsAdjusting()) {
-                    updateToggleButtonLabel();
+            public void mouseClicked(MouseEvent e) {
+                int row = transferTable.rowAtPoint(e.getPoint());
+                if (row >= 0 && row < filteredTransfers.size()) {
+                    // 1. Simpan ID baris yang diklik
+                    selectedTransferId = filteredTransfers.get(row).getTransferId();
+                    // 2. Update status tombol
+                    updateButtonState();
                 }
             }
         });
-        // initialize filtered view
-        rebuildFiltered();
+    }
+
+    /**
+     * Update data dari Controller/Task
+     */
+    public void updateTransfer(TransferModel model) {
+        // 1. Update Master List
+        int masterIndex = -1;
+        for (int i = 0; i < transfers.size(); i++) {
+            if (transfers.get(i).getTransferId().equals(model.getTransferId())) {
+                masterIndex = i;
+                break;
+            }
+        }
+        if (masterIndex >= 0) transfers.set(masterIndex, model);
+        else transfers.add(model);
+
+        // 2. Cek Filter (Send/Receive)
+        boolean isVisible = (filterDirection == null || model.getDirection() == filterDirection);
+
+        SwingUtilities.invokeLater(() -> {
+            if (!isVisible) return;
+
+            // 3. Update Filtered List (Tabel)
+            int tableIndex = -1;
+            for (int i = 0; i < filteredTransfers.size(); i++) {
+                if (filteredTransfers.get(i).getTransferId().equals(model.getTransferId())) {
+                    tableIndex = i;
+                    break;
+                }
+            }
+
+            if (tableIndex >= 0) {
+                // UPDATE
+                filteredTransfers.set(tableIndex, model);
+                // Hanya render ulang baris tersebut (Smart Update)
+                tableModel.fireTableRowsUpdated(tableIndex, tableIndex);
+                
+                // 4. RESTORE SELECTION (PENTING!)
+                // Jika baris yang diupdate adalah yang sedang dipilih user,
+                // pastikan tabel tetap menyorotnya & tombol tetap update.
+                if (selectedTransferId != null && selectedTransferId.equals(model.getTransferId())) {
+                    if (transferTable.getSelectedRow() != tableIndex) {
+                        transferTable.setRowSelectionInterval(tableIndex, tableIndex);
+                    }
+                    updateButtonState(); // Pastikan tombol tetap nyala
+                }
+            } else {
+                // INSERT
+                filteredTransfers.add(model);
+                int newRow = filteredTransfers.size() - 1;
+                tableModel.fireTableRowsInserted(newRow, newRow);
+            }
+        });
     }
 
     public void setFilterDirection(TransferModel.Direction dir) {
         this.filterDirection = dir;
         rebuildFiltered();
-        SwingUtilities.invokeLater(() -> tableModel.fireTableDataChanged());
     }
 
     private void rebuildFiltered() {
@@ -100,22 +147,25 @@ public class TransferListPanel extends JPanel {
                 filteredTransfers.add(m);
             }
         }
+        SwingUtilities.invokeLater(() -> {
+            tableModel.fireTableDataChanged();
+            selectedTransferId = null; // Reset selection on page change
+            updateButtonState();
+        });
     }
 
-    /**
-     * Create control buttons panel
-     */
     private JPanel createButtonPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 5));
+        panel.setOpaque(false);
 
-        // Toggle Pause/Resume button
         toggleBtn = new JButton("⏸ Pause");
-        toggleBtn.addActionListener(e -> toggleSelectedTransfer());
+        toggleBtn.setEnabled(false);
+        toggleBtn.addActionListener(e -> handleToggle());
 
-        // Cancel button
         cancelBtn = new JButton("✕ Cancel");
         cancelBtn.setForeground(Theme.WARN.darker());
-        cancelBtn.addActionListener(e -> cancelSelectedTransfer());
+        cancelBtn.setEnabled(false);
+        cancelBtn.addActionListener(e -> handleCancel());
 
         panel.add(toggleBtn);
         panel.add(cancelBtn);
@@ -123,154 +173,13 @@ public class TransferListPanel extends JPanel {
         return panel;
     }
 
-    /**
-     * Add atau update transfer di table
-     */
-    public void updateTransfer(TransferModel model) {
-        // Cek apakah transfer sudah ada
-        int index = -1;
-        for (int i = 0; i < transfers.size(); i++) {
-            if (transfers.get(i).getTransferId().equals(model.getTransferId())) {
-                index = i;
-                break;
-            }
-        }
+    // --- LOGIC TOMBOL MENGGUNAKAN 'selectedTransferId' ---
+    // Kita tidak pakai getSelectedRow() di sini agar lebih aman
+    
+    private void updateButtonState() {
+        // Cari model berdasarkan ID yang tersimpan
+        TransferModel selected = findModelById(selectedTransferId);
 
-        if (index >= 0) {
-            transfers.set(index, model);
-            rebuildFiltered();
-            SwingUtilities.invokeLater(() -> tableModel.fireTableDataChanged());
-        } else {
-            transfers.add(model);
-            rebuildFiltered();
-            SwingUtilities.invokeLater(() -> tableModel.fireTableDataChanged());
-        }
-    }
-
-    /**
-     * Remove transfer dari table
-     */
-    public void removeTransfer(String transferId) {
-        int index = -1;
-        for (int i = 0; i < transfers.size(); i++) {
-            if (transfers.get(i).getTransferId().equals(transferId)) {
-                index = i;
-                break;
-            }
-        }
-
-        if (index >= 0) {
-            transfers.remove(index);
-            rebuildFiltered();
-            SwingUtilities.invokeLater(() -> tableModel.fireTableDataChanged());
-        }
-    }
-
-    /**
-     * Refresh entire table
-     */
-    public void refreshTable() {
-        SwingUtilities.invokeLater(() -> tableModel.fireTableDataChanged());
-    }
-
-    /**
-     * Get transfer by ID
-     */
-    public TransferModel getTransfer(String transferId) {
-        for (TransferModel model : transfers) {
-            if (model.getTransferId().equals(transferId)) {
-                return model;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Get selected transfer
-     */
-    public TransferModel getSelectedTransfer() {
-        int row = transferTable.getSelectedRow();
-        if (row >= 0) {
-            if (row < filteredTransfers.size()) return filteredTransfers.get(row);
-        }
-        return null;
-    }
-
-    /**
-     * Pause selected transfer
-     */
-    private void pauseSelectedTransfer() {
-        TransferModel selected = getSelectedTransfer();
-        if (selected != null && selected.isInProgress()) {
-            selected.setStatus(TransferStatus.PAUSED);
-            refreshTable();
-            System.out.println("[TransferListPanel] Paused transfer: " + selected.getFileName());
-            if (controlListener != null) {
-                controlListener.pauseTransfer(selected.getTransferId());
-            }
-        }
-    }
-
-    /**
-     * Resume selected transfer
-     */
-    private void resumeSelectedTransfer() {
-        TransferModel selected = getSelectedTransfer();
-        if (selected != null && selected.getStatus() == TransferStatus.PAUSED) {
-            selected.setStatus(TransferStatus.TRANSFERRING);
-            refreshTable();
-            System.out.println("[TransferListPanel] Resumed transfer: " + selected.getFileName());
-            if (controlListener != null) {
-                controlListener.resumeTransfer(selected.getTransferId());
-            }
-        }
-    }
-
-    /**
-     * Cancel selected transfer
-     */
-    private void cancelSelectedTransfer() {
-        TransferModel selected = getSelectedTransfer();
-        if (selected != null) {
-            selected.setStatus(TransferStatus.CANCELLED);
-            refreshTable();
-            System.out.println("[TransferListPanel] Cancelled transfer: " + selected.getFileName());
-            if (controlListener != null) {
-                controlListener.cancelTransfer(selected.getTransferId());
-            }
-        }
-    }
-
-    /**
-     * Toggle selected transfer: pause if running, resume if paused.
-     */
-    private void toggleSelectedTransfer() {
-        TransferModel selected = getSelectedTransfer();
-        if (selected == null)
-            return;
-
-        if (selected.getStatus() == TransferStatus.PAUSED) {
-            // resume
-            if (controlListener != null) {
-                controlListener.resumeTransfer(selected.getTransferId());
-            }
-            selected.setStatus(TransferStatus.TRANSFERRING);
-            System.out.println("[TransferListPanel] Toggled -> Resumed: " + selected.getFileName());
-        } else if (selected.isInProgress()) {
-            // pause
-            if (controlListener != null) {
-                controlListener.pauseTransfer(selected.getTransferId());
-            }
-            selected.setStatus(TransferStatus.PAUSED);
-            System.out.println("[TransferListPanel] Toggled -> Paused: " + selected.getFileName());
-        }
-
-        refreshTable();
-        updateToggleButtonLabel();
-    }
-
-    private void updateToggleButtonLabel() {
-        TransferModel selected = getSelectedTransfer();
         if (selected == null) {
             toggleBtn.setText("⏸ Pause");
             toggleBtn.setEnabled(false);
@@ -278,9 +187,11 @@ public class TransferListPanel extends JPanel {
             return;
         }
 
+        // Enable tombol
         cancelBtn.setEnabled(true);
         toggleBtn.setEnabled(true);
 
+        // Update Text
         if (selected.getStatus() == TransferStatus.PAUSED) {
             toggleBtn.setText("▶ Resume");
         } else {
@@ -288,139 +199,111 @@ public class TransferListPanel extends JPanel {
         }
     }
 
-    /**
-     * Register control listener to delegate pause/resume/cancel actions
-     */
+    private void handleToggle() {
+        TransferModel selected = findModelById(selectedTransferId);
+        if (selected == null) return;
+
+        if (selected.getStatus() == TransferStatus.PAUSED) {
+            selected.setStatus(TransferStatus.TRANSFERRING);
+            if (controlListener != null) controlListener.resumeTransfer(selected.getTransferId());
+        } else if (selected.isInProgress()) {
+            selected.setStatus(TransferStatus.PAUSED);
+            if (controlListener != null) controlListener.pauseTransfer(selected.getTransferId());
+        }
+        // Force update UI baris ini agar status berubah cepat
+        updateTransfer(selected);
+    }
+
+    private void handleCancel() {
+        TransferModel selected = findModelById(selectedTransferId);
+        if (selected == null) return;
+
+        selected.setStatus(TransferStatus.CANCELLED);
+        if (controlListener != null) controlListener.cancelTransfer(selected.getTransferId());
+        
+        updateTransfer(selected);
+    }
+
+    // Helper: Cari object model berdasarkan ID
+    private TransferModel findModelById(String id) {
+        if (id == null) return null;
+        for (TransferModel m : filteredTransfers) {
+            if (m.getTransferId().equals(id)) return m;
+        }
+        return null;
+    }
+
     public void setControlListener(ControlListener listener) {
         this.controlListener = listener;
     }
 
-    /**
-     * Listener interface for control actions from UI to controller/manager
-     */
     public interface ControlListener {
         void pauseTransfer(String transferId);
-
         void resumeTransfer(String transferId);
-
         void cancelTransfer(String transferId);
     }
 
-    // ==================== Inner Class: Table Model ====================
-
+    // --- TABLE MODEL & RENDERER (Sama seperti sebelumnya) ---
     private class TransferTableModel extends AbstractTableModel {
-
-        private static final String[] COLUMN_NAMES = {
-                "Filename",
-                "Progress",
-                "Speed",
-                "Time Left",
-                "Status"
-        };
+        private static final String[] COLUMN_NAMES = {"Filename", "Progress", "Speed", "Time Left", "Status"};
 
         @Override
-        public int getRowCount() {
-            return filteredTransfers.size();
-        }
-
+        public int getRowCount() { return filteredTransfers.size(); }
         @Override
-        public int getColumnCount() {
-            return COLUMN_NAMES.length;
-        }
-
+        public int getColumnCount() { return COLUMN_NAMES.length; }
         @Override
-        public String getColumnName(int column) {
-            return COLUMN_NAMES[column];
-        }
-
+        public String getColumnName(int column) { return COLUMN_NAMES[column]; }
         @Override
         public Object getValueAt(int row, int column) {
+            if (row >= filteredTransfers.size()) return null;
             TransferModel model = filteredTransfers.get(row);
-
             switch (column) {
-                case 0: // Filename
-                    return model.getFileName();
-                case 1: // Progress (akan di-render sebagai progress bar)
-                    return model; // Pass entire model untuk renderer
-                case 2: // Speed
-                    return model.getSpeedFormatted();
-                case 3: // Time Left
-                    if (model.isComplete()) {
-                        return "Done";
-                    } else {
-                        return model.getRemainingTimeFormatted();
-                    }
-                case 4: // Status
-                    return model.getStatus().getDisplayName();
-                default:
-                    return null;
+                case 0: return model.getFileName();
+                case 1: return model; 
+                case 2: return model.getSpeedFormatted();
+                case 3: return model.isComplete() ? "Done" : model.getRemainingTimeFormatted();
+                case 4: return model.getStatus().getDisplayName();
+                default: return null;
             }
         }
-
         @Override
         public Class<?> getColumnClass(int column) {
-            if (column == 1) {
-                return TransferModel.class; // Progress column
-            }
-            return String.class;
+            return (column == 1) ? TransferModel.class : String.class;
         }
     }
 
-    // ==================== Inner Class: Progress Bar Renderer ====================
-
     private static class ProgressBarCellRenderer extends JPanel implements TableCellRenderer {
-
         private JProgressBar progressBar;
         private JLabel percentLabel;
 
         public ProgressBarCellRenderer() {
             setLayout(new BorderLayout(5, 0));
             setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
-
             progressBar = new JProgressBar(0, 100);
-            progressBar.setString("");
             progressBar.setStringPainted(false);
-
             percentLabel = new JLabel("0%");
             percentLabel.setPreferredSize(new Dimension(40, -1));
             percentLabel.setHorizontalAlignment(JLabel.RIGHT);
-
             add(progressBar, BorderLayout.CENTER);
             add(percentLabel, BorderLayout.EAST);
         }
 
         @Override
-        public Component getTableCellRendererComponent(JTable table, Object value,
-                boolean isSelected, boolean hasFocus, int row, int column) {
-
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             if (value instanceof TransferModel) {
                 TransferModel model = (TransferModel) value;
                 int progress = model.getProgress();
-
                 progressBar.setValue(progress);
                 percentLabel.setText(progress + "%");
 
-                // Color based on status
-                if (model.getStatus() == TransferStatus.COMPLETED) {
-                    progressBar.setForeground(Theme.SUCCESS);
-                } else if (model.getStatus() == TransferStatus.FAILED ||
-                        model.getStatus() == TransferStatus.CANCELLED) {
-                    progressBar.setForeground(Theme.WARN);
-                } else if (model.getStatus() == TransferStatus.PAUSED) {
-                    progressBar.setForeground(Theme.ACCENT.darker());
-                } else {
-                    progressBar.setForeground(new Color(0x84C5E8));
-                }
+                if (model.getStatus() == TransferStatus.COMPLETED) progressBar.setForeground(Theme.SUCCESS);
+                else if (model.getStatus() == TransferStatus.FAILED || model.getStatus() == TransferStatus.CANCELLED) progressBar.setForeground(Theme.WARN);
+                else if (model.getStatus() == TransferStatus.PAUSED) progressBar.setForeground(Theme.ACCENT.darker());
+                else progressBar.setForeground(new Color(0x84C5E8));
 
-                if (isSelected) {
-                    setBackground(table.getSelectionBackground());
-                    setForeground(table.getSelectionForeground());
-                } else {
-                    setBackground(table.getBackground());
-                    setForeground(table.getForeground());
-                }
+                setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
+                setForeground(isSelected ? table.getSelectionForeground() : table.getForeground());
             }
-
             return this;
         }
     }

@@ -124,6 +124,7 @@ public class TransferManager {
     public void pauseTransfer(String transferId) {
         TransferTask task = activeTasks.get(transferId);
         if (task != null) {
+            System.out.println("[TransferManager] Executing PAUSE on task...");
             task.pause();
         }
     }
@@ -136,6 +137,7 @@ public class TransferManager {
 
         if (task != null) {
             // if task exists and thread is alive, just resume
+            System.out.println("[TransferManager] Executing RESUME on task...");
             task.resume();
             return;
         }
@@ -167,9 +169,12 @@ public class TransferManager {
     public void cancelTransfer(String transferId) {
         TransferTask task = activeTasks.get(transferId);
         if (task != null) {
+            System.out.println("[TransferManager] Executing CANCEL on task...");
             task.cancel();
             activeTasks.remove(transferId);
             transferMeta.remove(transferId);
+        } else {
+             System.err.println("[TransferManager] Cannot CANCEL: Task not found for ID " + transferId);
         }
     }
 

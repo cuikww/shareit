@@ -7,7 +7,9 @@ import java.net.ServerSocket;
 import java.net.Socket;
 
 /**
- * Integration test: ensures SenderTask will reconnect and resume after a dropped connection.
+ * Integration test: ensures SenderTask will resume after a dropped connection.
+ * Since SenderTask no longer handles auto-reconnect internally, 
+ * this test simulates the application logic restarting the task.
  */
 public class ReconnectResumeTest {
 
@@ -26,18 +28,17 @@ public class ReconnectResumeTest {
 
         Thread serverThread = new Thread(() -> {
             try {
-                // First accept: read some bytes then close
+                // First accept: read some bytes then close (Simulate Drop)
                 try (Socket s1 = server.accept()) {
                     InputStream in = s1.getInputStream();
                     OutputStream out = s1.getOutputStream();
 
                     // handshake
-                    Protocol.Message m = Protocol.readMessage(in);
-                    // reply ACK
+                    Protocol.readMessage(in);
                     Protocol.writeMessage(out, new Protocol.Message(Protocol.OP_ACK, "ok".getBytes()));
 
                     // file_info
-                    m = Protocol.readMessage(in);
+                    Protocol.Message m = Protocol.readMessage(in);
                     Protocol.FileInfoMessage fi = Protocol.FileInfoMessage.fromBytes(m.payload);
 
                     // send ACK claiming 0 bytes present
@@ -55,7 +56,7 @@ public class ReconnectResumeTest {
                     }
 
                     alreadyReceivedByServer[0] = received; // 4KB
-                    // close connection to simulate failure
+                    System.out.println("Server: Connection 1 dropped after " + received + " bytes");
                 }
 
                 // Accept second connection and verify resume
@@ -64,14 +65,14 @@ public class ReconnectResumeTest {
                     OutputStream out2 = s2.getOutputStream();
 
                     // handshake
-                    Protocol.Message m = Protocol.readMessage(in2);
+                    Protocol.readMessage(in2);
                     Protocol.writeMessage(out2, new Protocol.Message(Protocol.OP_ACK, "ok".getBytes()));
 
                     // file_info
-                    m = Protocol.readMessage(in2);
+                    Protocol.Message m = Protocol.readMessage(in2);
                     Protocol.FileInfoMessage fi = Protocol.FileInfoMessage.fromBytes(m.payload);
 
-                    // reply with ACK indicating previously received bytes
+                    // reply with ACK indicating previously received bytes (Resume logic)
                     Protocol.AckMessage ack2 = new Protocol.AckMessage(fi.filename, alreadyReceivedByServer[0]);
                     Protocol.writeMessage(out2, new Protocol.Message(Protocol.OP_ACK, ack2.toBytes()));
 
@@ -85,6 +86,8 @@ public class ReconnectResumeTest {
                             break;
                         }
                     }
+
+                    System.out.println("Server: Connection 2 finished. Remaining bytes read: " + remaining);
 
                     if (remaining != fi.fileSize - alreadyReceivedByServer[0]) {
                         throw new RuntimeException("Mismatch remaining bytes: " + remaining + " expected " + (fi.fileSize - alreadyReceivedByServer[0]));
@@ -101,19 +104,22 @@ public class ReconnectResumeTest {
 
         serverThread.start();
 
-        // ConnectionManager: simple helper which connects to our ephemeral server port
-        core.network.ConnectionManager cm = new core.network.ConnectionManager(null) {
-            @Override
-            public Socket connectTo(String targetIP) throws IOException {
-                // always connect to our local ephemeral server port used above
-                return new Socket("127.0.0.1", port);
-            }
-        };
-
-        // Client side: make initial socket and run SenderTask (this will attempt reconnect + resume)
+        // Client side: Attempt 1 (Will fail because server drops it)
+        System.out.println("Client: Starting attempt 1...");
         try (Socket sock = new Socket("127.0.0.1", port)) {
-            SenderTask sender = new SenderTask(f, sock, "reconnect-test", null, System.getProperty("user.name"), cm, "127.0.0.1", 3);
-            sender.run(); // execute in-process for test
+            // Gunakan constructor standar yang baru
+            SenderTask sender = new SenderTask(f, sock, "reconnect-test", null, System.getProperty("user.name"));
+            sender.run(); 
+        } catch (Exception e) {
+            System.out.println("Client: Attempt 1 failed as expected (simulated drop)");
+        }
+
+        // Client side: Attempt 2 (Resume)
+        System.out.println("Client: Starting attempt 2 (Resume)...");
+        try (Socket sock = new Socket("127.0.0.1", port)) {
+            // Buat SenderTask baru untuk melanjutkan
+            SenderTask sender = new SenderTask(f, sock, "reconnect-test", null, System.getProperty("user.name"));
+            sender.run();
         }
 
         server.close();

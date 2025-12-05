@@ -8,19 +8,6 @@ import core.utils.Protocol.*;
 import java.io.*;
 import java.net.Socket;
 
-/**
- * Task untuk menerima file via TCP socket dengan Protocol.java
- * 
- * Protocol Flow:
- * 1. Receive HANDSHAKE (username|version)
- * 2. Send ACK
- * 3. Receive FILE_INFO (filename|filesize|md5)
- * 4. Send ACK
- * 5. Receive DATA chunks (8KB) dan save to file
- * 6. Receive COMPLETE
- * 7. Verify MD5 checksum
- * 8. Send final ACK
- */
 public class ReceiverTask extends TransferTask {
 
     private final String savePath;
@@ -28,11 +15,15 @@ public class ReceiverTask extends TransferTask {
     private final TransferListener listener;
     private final TransferManager.IncomingTransferListener incomingTransferListener;
     
-    // Progress tracking
     private long totalBytes;
     private long bytesReceived = 0;
     private File receivedFile;
     private FileOutputStream fileOut;
+    
+    // Variabel Throttling
+    private long lastNotifyTime = 0;
+    private long lastBytesNotify = 0; // Tambahkan variabel ini di class level
+
 
     public ReceiverTask(Socket socket, String savePath, String transferId, TransferListener listener, 
                         TransferManager.IncomingTransferListener incomingTransferListener) {
@@ -51,80 +42,46 @@ public class ReceiverTask extends TransferTask {
         try {
             in = socket.getInputStream();
             out = socket.getOutputStream();
-
-            // Set socket read timeout so we can detect missing peers faster instead of blocking forever
-            try {
-                socket.setSoTimeout(30_000); // 30 seconds
-            } catch (Exception ignored) { }
+            try { socket.setSoTimeout(30_000); } catch (Exception ignored) { }
             
-            log("ReceiverTask started, listening for incoming file...");
-            
-            // Step 1: Receive HANDSHAKE
+            // 1. Handshake
             Message msg = Protocol.readMessage(in);
-            if (msg.operation != Protocol.OP_HANDSHAKE) {
-                throw new IOException("Expected HANDSHAKE, got " + 
-                    Protocol.getOperationName(msg.operation));
-            }
-            
+            if (msg.operation != Protocol.OP_HANDSHAKE) throw new IOException("Expected HANDSHAKE");
             HandshakeMessage handshake = HandshakeMessage.fromBytes(msg.payload);
-            log("Received HANDSHAKE from " + handshake.username + " (version " + handshake.version + ")");
             
-            // Check if we should ask user to confirm this incoming transfer
             if (incomingTransferListener != null) {
                 boolean accepted = incomingTransferListener.onIncomingTransfer(transferId, handshake.username, socket);
                 if (!accepted) {
-                    log("Incoming transfer rejected by user");
                     socket.close();
                     return;
                 }
             }
             
-            // Step 2: Send ACK
-            Message ack = new Message(Protocol.OP_ACK, transferId.getBytes());
-            Protocol.writeMessage(out, ack);
+            // 2. ACK Handshake
+            Protocol.writeMessage(out, new Message(Protocol.OP_ACK, transferId.getBytes()));
             
-            // Step 3: Receive FILE_INFO
+            // 3. File Info
             msg = Protocol.readMessage(in);
-            if (msg.operation != Protocol.OP_FILE_INFO) {
-                throw new IOException("Expected FILE_INFO, got " + 
-                    Protocol.getOperationName(msg.operation));
-            }
-            
+            if (msg.operation != Protocol.OP_FILE_INFO) throw new IOException("Expected FILE_INFO");
             FileInfoMessage fileInfo = FileInfoMessage.fromBytes(msg.payload);
-            log("Received FILE_INFO: " + fileInfo);
-            
             totalBytes = fileInfo.fileSize;
             
-            // Notify listener
-            if (listener != null) {
-                listener.onTransferStarted(transferId, fileInfo.filename);
-            }
+            if (listener != null) listener.onTransferStarted(transferId, fileInfo.filename);
             
-            // Step 4: Send ACK. If a partial file already exists locally, include bytesReceived to allow resume.
+            // 4. Check Resume
             long existingBytes = 0;
             File possibleFile = new File(savePath, fileInfo.filename);
             if (possibleFile.exists()) {
                 existingBytes = possibleFile.length();
-                // Cap existingBytes to totalBytes
-                if (existingBytes > totalBytes) existingBytes = totalBytes;
+                if (existingBytes > totalBytes) existingBytes = 0;
             }
-
-            AckMessage ackMsgObj = new AckMessage(transferId, existingBytes);
-            ack = new Message(Protocol.OP_ACK, ackMsgObj.toBytes());
-            Protocol.writeMessage(out, ack);
             
-            // Create output file
+            Protocol.writeMessage(out, new Message(Protocol.OP_ACK, new AckMessage(transferId, existingBytes).toBytes()));
+            
             receivedFile = new File(savePath, fileInfo.filename);
+            if (!receivedFile.getParentFile().exists()) receivedFile.getParentFile().mkdirs();
             
-            // Ensure parent directory exists
-            if (!receivedFile.getParentFile().exists()) {
-                receivedFile.getParentFile().mkdirs();
-            }
-            
-            log("Saving file to: " + receivedFile.getAbsolutePath());
-            // If there is an existing partial file, open in append mode and continue
             if (existingBytes > 0 && receivedFile.exists()) {
-                log("Resuming existing file at offset: " + existingBytes);
                 fileOut = new FileOutputStream(receivedFile, true);
                 bytesReceived = existingBytes;
             } else {
@@ -132,122 +89,72 @@ public class ReceiverTask extends TransferTask {
                 bytesReceived = 0;
             }
             
-            // Step 5: Receive DATA chunks
-            // Keep reading until we receive an explicit COMPLETE message from sender.
-            // Previously the code stopped when bytesReceived >= totalBytes which could leave
-            // the trailing COMPLETE message in the stream and cause protocol misalignment.
-            log("Waiting for data...");
+            // Update awal
+            notifyProgress(true);
+
+            // 5. Receive Data Loop
             while (true) {
-                // Check pause/cancel
                 checkPaused();
                 checkCancelled();
                 
                 msg = Protocol.readMessage(in);
                 
                 if (msg.operation == Protocol.OP_COMPLETE) {
-                    log("Received COMPLETE message");
-
-                    // If we get COMPLETE before receiving the expected number of bytes, that's an error
-                    if (bytesReceived != totalBytes) {
-                        throw new IOException("Received COMPLETE before all data was received (" + bytesReceived + "/" + totalBytes + ")");
-                    }
-
                     break;
                 }
                 
-                if (msg.operation != Protocol.OP_DATA) {
-                    throw new IOException("Expected DATA or COMPLETE, got " + 
-                        Protocol.getOperationName(msg.operation));
-                }
+                if (msg.operation != Protocol.OP_DATA) throw new IOException("Expected DATA");
                 
-                // Write chunk to file
                 fileOut.write(msg.payload);
                 bytesReceived += msg.payload.length;
                 
-                // Notify progress
-                notifyProgress();
+                // --- THROTTLING DI SINI ---
+                notifyProgress(false);
             }
             
-            // Close file output
-            if (fileOut != null) {
-                fileOut.close();
-                fileOut = null;
-            }
+            // Update akhir sebelum verify
+            notifyProgress(true);
+
+            if (fileOut != null) { fileOut.close(); fileOut = null; }
             
-            // Step 6: Verify MD5 checksum
-            log("Verifying MD5 checksum...");
+            // 6. Verify MD5
             String receivedMD5 = FileUtils.getMD5(receivedFile);
+            if (!receivedMD5.equalsIgnoreCase(fileInfo.md5Hash)) throw new IOException("MD5 mismatch");
             
-            if (!receivedMD5.equals(fileInfo.md5Hash)) {
-                throw new IOException("MD5 checksum mismatch! Expected: " + fileInfo.md5Hash + 
-                    ", Got: " + receivedMD5);
-            }
+            // 7. Final ACK
+            Protocol.writeMessage(out, new Message(Protocol.OP_ACK, transferId.getBytes()));
             
-            log("MD5 checksum verified successfully!");
-            
-            // Step 7: Send final ACK
-            ack = new Message(Protocol.OP_ACK, transferId.getBytes());
-            Protocol.writeMessage(out, ack);
-            
-            log("Transfer completed successfully! File: " + receivedFile.getAbsolutePath() + 
-                " (" + FileUtils.formatFileSize(receivedFile.length()) + ")");
-            
-            if (listener != null) {
-                listener.onTransferCompleted(transferId);
-            }
+            if (listener != null) listener.onTransferCompleted(transferId);
             
         } catch (InterruptedException e) {
-            log("Transfer interrupted: " + e.getMessage());
-            if (listener != null) {
-                listener.onTransferFailed(transferId, "Interrupted");
-            }
-            deleteReceivedFile();
+            if (listener != null) listener.onTransferFailed(transferId, "Cancelled");
         } catch (Exception e) {
-            log("Error during transfer: " + e.getMessage());
             e.printStackTrace();
-            
-            // Try to send error message
-            try {
-                if (out != null) {
-                    ErrorMessage errorMsg = new ErrorMessage(
-                        Protocol.ErrorCode.UNKNOWN_ERROR, 
-                        e.getMessage()
-                    );
-                    Message errMsg = new Message(Protocol.OP_ERROR, errorMsg.toBytes());
-                    Protocol.writeMessage(out, errMsg);
-                }
-            } catch (Exception ignored) {}
-            
-            if (listener != null) {
-                listener.onTransferFailed(transferId, e.getMessage());
-            }
-            deleteReceivedFile();
+            try { if (out != null) Protocol.writeMessage(out, new Message(Protocol.OP_ERROR, new ErrorMessage(99, e.getMessage()).toBytes())); } catch (Exception ignored) {}
+            if (listener != null) listener.onTransferFailed(transferId, e.getMessage());
         } finally {
-            // Cleanup
-            try {
-                if (fileOut != null) fileOut.close();
-                if (socket != null && !socket.isClosed()) socket.close();
-            } catch (IOException ignored) {}
+            try { if (fileOut != null) fileOut.close(); if (socket != null && !socket.isClosed()) socket.close(); } catch (IOException ignored) {}
         }
     }
     
-    // ==================== Helper Methods ====================
-    
-    private void notifyProgress() {
-        if (listener != null) {
-            listener.onTransferProgress(transferId, bytesReceived, totalBytes);
+    private void notifyProgress(boolean force) {
+        long now = System.currentTimeMillis();
+        long deltaBytes = bytesReceived - lastBytesNotify;
+
+        // Hitung persentase kenaikan
+        boolean significantProgress = false;
+        if (totalBytes > 0) {
+            double percentDelta = (double) deltaBytes / totalBytes * 100.0;
+            if (percentDelta >= 1.0) significantProgress = true;
         }
-    }
-    
-    private void deleteReceivedFile() {
-        if (receivedFile != null && receivedFile.exists()) {
-            if (receivedFile.delete()) {
-                log("Incomplete file deleted: " + receivedFile.getAbsolutePath());
+
+        // Update jika: Force OR (Waktu > 50ms) OR (Naik > 1%)
+        if (force || (now - lastNotifyTime > 50) || significantProgress) {
+            if (listener != null) {
+                listener.onTransferProgress(transferId, bytesReceived, totalBytes);
             }
+            lastNotifyTime = now;
+            lastBytesNotify = bytesReceived;
         }
-    }
-    
-    private void log(String message) {
-        System.out.println("[ReceiverTask] " + message);
     }
 }

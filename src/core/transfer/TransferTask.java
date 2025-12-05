@@ -2,12 +2,10 @@ package core.transfer;
 
 import java.net.Socket;
 
-/**
- * Abstract base class untuk transfer task (Sender & Receiver)
- */
 public abstract class TransferTask implements Runnable {
 
     protected Socket socket;
+    // Gunakan volatile agar perubahan nilai langsung terbaca di thread lain
     protected volatile boolean isPaused = false;
     protected volatile boolean isCancelled = false;
     protected Thread taskThread;
@@ -16,9 +14,6 @@ public abstract class TransferTask implements Runnable {
         this.socket = socket;
     }
 
-    /**
-     * Start task di thread terpisah
-     */
     public void start() {
         if (taskThread == null || !taskThread.isAlive()) {
             taskThread = new Thread(this, "TransferTask-" + System.currentTimeMillis());
@@ -26,30 +21,27 @@ public abstract class TransferTask implements Runnable {
         }
     }
 
-    /**
-     * Pause transfer
-     */
     public void pause() {
-        isPaused = true;
-        System.out.println("[TransferTask] Paused");
-    }
-
-    /**
-     * Resume transfer
-     */
-    public void resume() {
-        isPaused = false;
-        synchronized (this) {
-            notifyAll();
+        if (!isPaused) {
+            isPaused = true;
+            System.out.println("[TransferTask] Requesting PAUSE...");
         }
-        System.out.println("[TransferTask] Resumed");
     }
 
-    /**
-     * Cancel transfer
-     */
+    public void resume() {
+        if (isPaused) {
+            isPaused = false;
+            System.out.println("[TransferTask] Requesting RESUME...");
+            synchronized (this) {
+                notifyAll(); // Bangunkan thread yang sedang wait()
+            }
+        }
+    }
+
     public void cancel() {
         isCancelled = true;
+        // Jika sedang dipause, kita harus resume dulu agar bisa stop loop dan close socket
+        resume(); 
         if (taskThread != null) {
             taskThread.interrupt();
         }
@@ -57,19 +49,19 @@ public abstract class TransferTask implements Runnable {
     }
 
     /**
-     * Check jika task sedang paused, tunggu sampai resume
+     * Method ini WAJIB dipanggil di dalam loop pengiriman/penerimaan.
+     * Jika isPaused = true, thread akan tidur (wait) di sini.
      */
     protected void checkPaused() throws InterruptedException {
-        while (isPaused && !isCancelled) {
-            synchronized (this) {
-                wait();
+        synchronized (this) {
+            while (isPaused && !isCancelled) {
+                System.out.println("[TransferTask] Thread is PAUSED. Waiting for resume...");
+                wait(); // Thread tidur di sini sampai di-notify() oleh resume()
+                System.out.println("[TransferTask] Thread RESUMED.");
             }
         }
     }
 
-    /**
-     * Check jika task di-cancel
-     */
     protected void checkCancelled() throws InterruptedException {
         if (isCancelled) {
             throw new InterruptedException("Task cancelled");

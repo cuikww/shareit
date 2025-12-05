@@ -52,20 +52,18 @@ public class MainFrame extends JFrame {
         statusLabel.setFont(Theme.HEADER_FONT);
         leftHeader.add(statusLabel);
 
-        // Right header area (user) uses transparent background
         JPanel rightHeader = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        rightHeader.setOpaque(false);
         rightHeader.setOpaque(false);
         userLabel = new JLabel("");
         userLabel.setForeground(Theme.TEXT);
         userLabel.setFont(Theme.BODY_FONT);
 
-        // Move back button to top-left helper (visually before status)
+        // Tombol Back
         backButton = new JButton("← Back");
-        backButton.setVisible(false);
+        backButton.setVisible(false); // Default hidden di awal
         backButton.addActionListener(e -> showLanding());
 
-        // For layout, add back button on the left header before status
+        // Setup Header Layout
         leftHeader.removeAll();
         backButton.setBackground(Theme.ACCENT);
         backButton.setForeground(Theme.TEXT);
@@ -73,6 +71,7 @@ public class MainFrame extends JFrame {
         backButton.setBorderPainted(false);
         backButton.setFocusPainted(false);
         backButton.setPreferredSize(new java.awt.Dimension(84, 30));
+        
         leftHeader.add(backButton);
         leftHeader.add(Box.createRigidArea(new Dimension(8, 0)));
         statusLabel.setBorder(new EmptyBorder(0, 4, 0, 0));
@@ -85,13 +84,10 @@ public class MainFrame extends JFrame {
 
         add(headerPanel, BorderLayout.NORTH);
 
-        // left device list (will be part of card pages)
+        // --- 2. MAIN CONTENT ---
         deviceListPanel = new DeviceListPanel();
-
-        // Transfer list
         transferListPanel = new TransferListPanel();
 
-        // Landing panel
         landingPanel = new LandingPanel();
         landingPanel.setLandingListener(new LandingListener() {
             @Override
@@ -111,12 +107,9 @@ public class MainFrame extends JFrame {
             }
         });
 
-        // card container
         cards = new JPanel(new CardLayout());
-
-        // Create two pages: main center (send/transfer) and receive
-        // Create Send and Receive pages which contain the device list on the left and
-        // a main area to manage files and review transfers on the right.
+        
+        // Setup Send Page
         this.sendPanel = new SendPanel();
         sendPanel.setSendListener(new SendPanel.SendListener() {
             @Override
@@ -138,13 +131,10 @@ public class MainFrame extends JFrame {
             }
 
             @Override
-            public void onRemoveSelected(java.util.List<java.io.File> removed) {
-                // nothing extra for now
-            }
+            public void onRemoveSelected(java.util.List<java.io.File> removed) { }
 
             @Override
             public void onSendFiles(java.util.List<java.io.File> files) {
-                // Pass files and selected device to controller
                 if (controller != null)
                     controller.handleSendFiles(files);
             }
@@ -154,7 +144,6 @@ public class MainFrame extends JFrame {
         rightForSend.add(sendPanel, BorderLayout.NORTH);
         rightForSend.add(transferListPanel, BorderLayout.CENTER);
 
-        // Hook device selection changes to update SendPanel selected device
         deviceListPanel.setSelectionListener(new ui.panels.DeviceListPanel.DeviceSelectionListener() {
             @Override
             public void onDeviceSelected(core.network.Device device) {
@@ -165,6 +154,7 @@ public class MainFrame extends JFrame {
         JPanel sendPage = new JPanel(new BorderLayout());
         sendPage.add(rightForSend, BorderLayout.CENTER);
 
+        // Setup Receive Page
         ReceivePanel receivePanel = new ReceivePanel();
         JPanel rightForReceive = new JPanel(new BorderLayout(8, 8));
         rightForReceive.add(receivePanel, BorderLayout.NORTH);
@@ -177,23 +167,12 @@ public class MainFrame extends JFrame {
         cards.add(sendPage, "send");
         cards.add(receivePage, "receive");
 
-        // Make device list a persistent left column and render the pages on the right
         JSplitPane mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, deviceListPanel, cards);
         mainSplit.setResizeWeight(0.25);
         add(mainSplit, BorderLayout.CENTER);
 
-        // bottom area: small hint and an overall sending progress area
-        JPanel bottomHint = new JPanel(new BorderLayout());
-        bottomHint.setBackground(Theme.BG);
-        bottomHint.setPreferredSize(new Dimension(100, 80));
-
-        JLabel hint = new JLabel("Tip: set your name on the landing page before sending/receiving");
-        hint.setFont(Theme.BODY_FONT);
-        JPanel hintWrap = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        hintWrap.setOpaque(false);
-        hintWrap.add(hint);
-
-        // Overall progress components (hidden by default)
+        // --- 3. BOTTOM / FOOTER (REVISED) ---
+        // Hapus "Tip" label, sisakan progress bar container saja
         overallProgressContainer = new JPanel(new BorderLayout(8, 4));
         overallProgressContainer.setOpaque(false);
         overallProgressContainer.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
@@ -208,26 +187,26 @@ public class MainFrame extends JFrame {
         overallProgressContainer.add(overallSpeedLabel, BorderLayout.EAST);
         overallProgressContainer.setVisible(false);
 
-        bottomHint.add(hintWrap, BorderLayout.NORTH);
-        bottomHint.add(overallProgressContainer, BorderLayout.SOUTH);
-
-        add(bottomHint, BorderLayout.SOUTH);
+        // Langsung add container progress bar ke SOUTH tanpa panel tambahan text
+        add(overallProgressContainer, BorderLayout.SOUTH);
     }
 
-    // Fungsi untuk mengubah teks status server dari Controller
+    // --- LOGIC PERUBAHAN WARNA STATUS ---
     public void setServerStatus(String ip, int port, boolean isRunning) {
         if (isRunning) {
-            statusLabel.setText("✅ Server Online | IP Anda: " + ip + " | Port: " + port);
-            statusLabel.setForeground(new Color(100, 255, 100)); // Hijau muda
+            statusLabel.setText("✅ Server Online | IP: " + ip + ":" + port);
+            // Ganti warna menjadi Hijau Tua (Dark Green) agar lebih enak di mata
+            statusLabel.setForeground(new Color(0, 100, 0)); 
         } else {
             statusLabel.setText("❌ Server Offline");
-            statusLabel.setForeground(new Color(255, 100, 100)); // Merah muda
+            statusLabel.setForeground(new Color(178, 34, 34)); // Firebrick Red
         }
     }
 
     public void setUser(String name) {
-        userLabel.setText("User: " + name + "   ");
-        backButton.setVisible(true);
+        userLabel.setText("User: " + name + "    ");
+        // HAPUS baris ini: backButton.setVisible(true); 
+        // Agar tombol back tidak muncul saat aplikasi baru start (di set dari Controller)
     }
 
     public void setLandingName(String name) {
@@ -238,66 +217,42 @@ public class MainFrame extends JFrame {
     private void showLanding() {
         CardLayout cl = (CardLayout) cards.getLayout();
         cl.show(cards, "landing");
-        backButton.setVisible(false);
-        // leaving other pages - make sure we stop announcing presence
+        // Sembunyikan tombol back di halaman awal
+        backButton.setVisible(false); 
+        
         if (controller != null) controller.enableReceiveMode(false);
     }
 
     public void showSendPage() {
         CardLayout cl = (CardLayout) cards.getLayout();
         cl.show(cards, "send");
-        // Show only outgoing transfers when on Send page
+        // Tampilkan tombol back
+        backButton.setVisible(true);
+        
         if (transferListPanel != null)
             transferListPanel.setFilterDirection(core.transfer.TransferModel.Direction.OUTGOING);
-        // Sending page shouldn't keep the device announced as receiver
         if (controller != null) controller.enableReceiveMode(false);
     }
 
     public void showReceivePage() {
         CardLayout cl = (CardLayout) cards.getLayout();
         cl.show(cards, "receive");
-        // Show only incoming transfers when on Receive page
+        // Tampilkan tombol back
+        backButton.setVisible(true);
+        
         if (transferListPanel != null)
             transferListPanel.setFilterDirection(core.transfer.TransferModel.Direction.INCOMING);
-        // Start announcing presence so peers can see this device as a receiver
         if (controller != null) controller.enableReceiveMode(true);
     }
 
-    // Fungsi untuk menambah device ke list
-    public void addDevice(Device device) {
-        deviceListPanel.addDevice(device);
-    }
-
-    public void updateDevice(Device device) {
-        deviceListPanel.updateDevice(device);
-    }
-
-    // Fungsi untuk menghapus device dari list
-    public void removeDevice(Device device) {
-        deviceListPanel.removeDevice(device);
-    }
-
-    // Fungsi untuk mendapatkan device yang dipilih
-    public Device getSelectedDevice() {
-        return deviceListPanel.getSelectedDevice();
-    }
-
-    // Fungsi untuk menampilkan error dialog
-    public void showError(String message) {
-        JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE);
-    }
-
-    // Fungsi untuk menampilkan info dialog
-    public void showInfo(String message) {
-        JOptionPane.showMessageDialog(this, message, "Info", JOptionPane.INFORMATION_MESSAGE);
-    }
-
-    // Getter untuk TransferListPanel
-    public TransferListPanel getTransferListPanel() {
-        return transferListPanel;
-    }
-
-    // ==================== Overall progress UI helpers ====================
+    // Delegasi method lainnya tidak berubah...
+    public void addDevice(Device device) { deviceListPanel.addDevice(device); }
+    public void updateDevice(Device device) { deviceListPanel.updateDevice(device); }
+    public void removeDevice(Device device) { deviceListPanel.removeDevice(device); }
+    public Device getSelectedDevice() { return deviceListPanel.getSelectedDevice(); }
+    public void showError(String message) { JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE); }
+    public void showInfo(String message) { JOptionPane.showMessageDialog(this, message, "Info", JOptionPane.INFORMATION_MESSAGE); }
+    public TransferListPanel getTransferListPanel() { return transferListPanel; }
 
     public void setOverallProgressVisible(boolean visible) {
         if (overallProgressContainer != null) overallProgressContainer.setVisible(visible);
@@ -305,10 +260,9 @@ public class MainFrame extends JFrame {
 
     public void updateOverallProgress(long bytesTransferred, long totalBytes, double speedKBps) {
         if (overallProgressBar == null) return;
-
         if (totalBytes <= 0) {
             overallProgressBar.setIndeterminate(true);
-            overallProgressBar.setString("Sending — 0% (calculating)");
+            overallProgressBar.setString("Sending — Calculating...");
         } else {
             overallProgressBar.setIndeterminate(false);
             int percent = (int) ((bytesTransferred * 100) / totalBytes);
@@ -316,8 +270,6 @@ public class MainFrame extends JFrame {
             String label = String.format("%s / %s — %d%%", formatBytes(bytesTransferred), formatBytes(totalBytes), percent);
             overallProgressBar.setString(label);
         }
-
-        // speed label
         if (speedKBps <= 0) {
             overallSpeedLabel.setText("");
         } else {

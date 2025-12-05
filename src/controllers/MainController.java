@@ -70,16 +70,19 @@ public class MainController implements ConnectionManager.ServerListener,
         this.transferListPanel.setControlListener(new TransferListPanel.ControlListener() {
             @Override
             public void pauseTransfer(String transferId) {
+                System.out.println("[Controller] User clicked PAUSE for: " + transferId);
                 transferManager.pauseTransfer(transferId);
             }
 
             @Override
             public void resumeTransfer(String transferId) {
+                System.out.println("[Controller] User clicked RESUME for: " + transferId);
                 transferManager.resumeTransfer(transferId);
             }
 
             @Override
             public void cancelTransfer(String transferId) {
+                System.out.println("[Controller] User clicked CANCEL for: " + transferId);
                 transferManager.cancelTransfer(transferId);
             }
         });
@@ -234,7 +237,7 @@ public class MainController implements ConnectionManager.ServerListener,
         }
     }
 
-    @Override
+@Override
     public void onTransferCompleted(String transferId) {
         System.out.println("[Controller] Transfer completed: " + transferId);
 
@@ -245,8 +248,20 @@ public class MainController implements ConnectionManager.ServerListener,
             // Update UI
             SwingUtilities.invokeLater(() -> {
                 transferListPanel.updateTransfer(model);
-                // Bisa di-remove dari active list setelah beberapa waktu
-                // atau biarkan tetap terlihat untuk history
+                
+                // --- PERUBAHAN: Tampilkan notifikasi Berhasil ---
+                String msg;
+                if (model.getDirection() == core.transfer.TransferModel.Direction.OUTGOING) {
+                    msg = "File berhasil dikirim: \n" + model.getFileName();
+                } else {
+                    msg = "File berhasil diterima: \n" + model.getFileName();
+                }
+                
+                JOptionPane.showMessageDialog(mainFrame, 
+                        msg, 
+                        "Transfer Berhasil", 
+                        JOptionPane.INFORMATION_MESSAGE);
+                // -----------------------------------------------
             });
         }
 
